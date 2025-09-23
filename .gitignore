@@ -1,0 +1,81 @@
+# Rust build artifacts
+/target/
+/Cargo.lock
+
+# Debug builds
+debug/
+target/debug/
+
+# Release builds  
+target/release/
+
+# Documentation builds
+target/doc/
+
+# Dependency directory
+# Uncomment if you're not using a version control system for dependencies
+# /vendor/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Editor backup files
+*.bak
+*.tmp
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Windows
+*.lnk
+
+# Linux
+*~
+
+# Logs
+*.log
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+
+# Rust-specific
+*.pdb
+
+# Flamegraph profiling
+flamegraph.svg
+perf.data*
+
+# Benchmarking
+criterion/
+
+# Testing
+/tests/tmp/
+*.profraw
+
+# Local configuration
+.env
+.env.local
+.env.production
+.env.test
+
+# Rust analyzer cache  
+.rust-analyzer/
+
+# Clippy cache
+.clippy.toml 
