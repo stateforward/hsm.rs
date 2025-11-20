@@ -63,14 +63,12 @@ async fn main() -> Result<()> {
         state!("idle",
             entry!(|_ctx, inst: &mut MyInstance, _event| {
                 inst.log.push("Entered idle".to_string());
-                Box::pin(async move {})
             }),
             transition!(on!("start"), target!("../running"))
         ),
         state!("running",
             entry!(|_ctx, inst: &mut MyInstance, _event| {
                 inst.log.push("Entered running".to_string());
-                Box::pin(async move {})
             }),
             transition!(on!("stop"), target!("../idle"))
         )
@@ -133,13 +131,12 @@ initial!(target!("defaultState"))
 // Event trigger
 on!("eventName")
 
-// Guard condition
+// Guard condition - SYNCHRONOUS, returns bool
 guard!(|_ctx, inst: &MyInstance, _event| inst.counter > 5)
 
-// Transition effect
+// Transition effect - SYNCHRONOUS
 effect!(|_ctx, inst: &mut MyInstance, _event| {
     inst.counter += 1;
-    Box::pin(async move {})
 })
 
 // Target state
@@ -149,19 +146,17 @@ target!("../targetStatePath")
 #### Lifecycle Actions
 
 ```rust
-// Entry action (executed when entering a state)
+// Entry action (executed when entering a state) - SYNCHRONOUS
 entry!(|_ctx, inst: &mut MyInstance, _event| {
     inst.log.push("Entered state".to_string());
-    Box::pin(async move {})
 })
 
-// Exit action (executed when exiting a state)
+// Exit action (executed when exiting a state) - SYNCHRONOUS
 exit!(|_ctx, inst: &mut MyInstance, _event| {
     inst.log.push("Exited state".to_string());
-    Box::pin(async move {})
 })
 
-// Activity (runs while in state, cancelled on exit)
+// Activity (runs while in state, cancelled on exit) - ASYNC
 activity!(|_ctx, inst: &mut MyInstance, _event| {
     inst.log.push("Activity running".to_string());
     Box::pin(async move {
@@ -266,7 +261,6 @@ let model = define!("GameMachine",
         initial!(target!("playing")),
         entry!(|_ctx, inst: &mut GameInstance, _event| {
             inst.log.push("Game started".to_string());
-            Box::pin(async move {})
         }),
         state!("playing",
             transition!(on!("pause"), target!("../paused")),
@@ -285,15 +279,14 @@ let model = define!("GameMachine",
 ### Guards and Effects
 
 ```rust
+// Guard - SYNCHRONOUS, returns bool
 fn can_transition(_ctx: &Context, inst: &MyInstance, _event: &Event) -> bool {
     inst.counter < 10
 }
 
-fn increment_counter(_ctx: &Context, inst: &mut MyInstance, _event: &Event) 
-    -> Pin<Box<dyn Future<Output = ()> + Send>> 
-{
+// Effect - SYNCHRONOUS
+fn increment_counter(_ctx: &Context, inst: &mut MyInstance, _event: &Event) {
     inst.counter += 1;
-    Box::pin(async move {})
 }
 
 let model = define!("ConditionalMachine",
@@ -357,14 +350,11 @@ let event = Event::new("process").with_data(MyData {
     message: "Hello".to_string(),
 });
 
-// Access data in handlers
-fn handle_event(_ctx: &Context, inst: &mut MyInstance, event: &Event) 
-    -> Pin<Box<dyn Future<Output = ()> + Send>> 
-{
+// Access data in handlers - SYNCHRONOUS
+fn handle_event(_ctx: &Context, inst: &mut MyInstance, event: &Event) {
     if let Some(data) = event.get_data::<MyData>() {
         inst.log.push(format!("Received: {} - {}", data.value, data.message));
     }
-    Box::pin(async move {})
 }
 ```
 
@@ -505,6 +495,45 @@ match hsm.dispatch(&ctx, event).await {
     Err(e) => eprintln!("Error: {:?}", e),
 }
 ```
+
+## 🔑 Synchronous vs Async
+
+Understanding the execution model is crucial:
+
+### Synchronous Functions (Immediate Execution)
+
+* **Entry actions**: Execute immediately when entering a state
+* **Exit actions**: Execute immediately when exiting a state
+* **Guards**: Evaluate immediately to determine if transition is allowed
+* **Effects**: Execute immediately during transition
+
+```rust
+// Synchronous - no async/await needed
+entry!(|_ctx, inst: &mut MyInstance, _event| {
+    inst.counter += 1;  // Executes immediately
+})
+
+guard!(|_ctx, inst: &MyInstance, _event| {
+    inst.counter > 5  // Evaluates immediately, returns bool
+})
+```
+
+### Async Functions (Concurrent Execution)
+
+* **Activities**: Run concurrently while in a state, automatically cancelled on state exit
+
+```rust
+// Async - returns a Future that runs concurrently
+activity!(|_ctx, inst: &mut MyInstance, _event| {
+    Box::pin(async move {
+        // This runs concurrently with the state machine
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        // Work continues...
+    })
+})
+```
+
+**Why this matters**: Entry/exit/guards/effects are part of the transition logic and must complete immediately. Activities represent ongoing work that happens *while* in a state.
 
 ## 🎓 Best Practices
 
