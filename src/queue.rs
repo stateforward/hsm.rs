@@ -33,7 +33,11 @@ impl EventQueue {
             .or_else(|| self.events.pop_front())
     }
 
+    pub fn len(&self) -> usize {
+        self.completion_events.len() + self.events.len()
+    }
+
     pub fn is_empty(&self) -> bool {
-        self.completion_events.is_empty() && self.events.is_empty()
+        self.len() == 0
     }
 }
