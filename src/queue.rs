@@ -29,7 +29,7 @@ impl EventQueue {
 
     pub fn pop(&mut self) -> Option<Event> {
         self.completion_events
-            .pop_front()
+            .pop_back()
             .or_else(|| self.events.pop_front())
     }
 

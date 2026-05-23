@@ -1,12 +1,7 @@
-use rust::queue::*;
 use rust::event::Event;
 use rust::kind;
+use rust::queue::*;
 
-// Note: EventQueue is not currently exported from the lib. 
-// This test would need the queue module to be made public.
-// For now, commenting out to avoid compilation errors.
-
-/*
 #[test]
 fn test_queue_creation() {
     let queue = EventQueue::new();
@@ -44,9 +39,9 @@ fn test_queue_completion_event_priority() {
     queue.push(Event::completion("completion2"));
     queue.push(Event::new("regular3"));
     
-    // Completion events should come out first, in FIFO order
-    assert_eq!(queue.pop().unwrap().name, "completion1");
+    // Completion events should come out first, in LIFO order
     assert_eq!(queue.pop().unwrap().name, "completion2");
+    assert_eq!(queue.pop().unwrap().name, "completion1");
     
     // Then regular events in FIFO order
     assert_eq!(queue.pop().unwrap().name, "regular1");
@@ -73,13 +68,4 @@ fn test_queue_error_event_priority() {
     // Then regular events
     assert_eq!(queue.pop().unwrap().name, "regular1");
     assert_eq!(queue.pop().unwrap().name, "regular2");
-}
-*/
-
-// Placeholder test that always passes since EventQueue is not exported
-#[test]
-fn test_queue_placeholder() {
-    // EventQueue is currently internal to the HSM implementation
-    // These tests will be enabled once the queue module is properly exported
-    assert!(true);
 }
