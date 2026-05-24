@@ -1,8 +1,8 @@
 // Context for HSM execution (cancellation tokens, etc.)
 
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
     Arc,
+    atomic::{AtomicBool, Ordering},
 };
 use std::time::{Duration, Instant};
 
@@ -24,7 +24,7 @@ impl Context {
             cancelled: Arc::new(AtomicBool::new(false)),
             deadline: Some(Instant::now() + timeout),
         };
-        
+
         // Spawn timeout task if tokio is available
         #[cfg(feature = "tokio")]
         {
@@ -34,7 +34,7 @@ impl Context {
                 cancelled.store(true, Ordering::Release);
             });
         }
-        
+
         ctx
     }
 
@@ -43,7 +43,7 @@ impl Context {
         if self.cancelled.load(Ordering::Acquire) {
             return true;
         }
-        
+
         // Check deadline if set
         if let Some(deadline) = self.deadline {
             if Instant::now() >= deadline {
@@ -51,7 +51,7 @@ impl Context {
                 return true;
             }
         }
-        
+
         false
     }
 

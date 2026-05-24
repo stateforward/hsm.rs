@@ -93,6 +93,33 @@ macro_rules! on {
 }
 
 #[macro_export]
+macro_rules! on_call {
+    ($name:expr) => {{
+        let trigger = $crate::builder::PartialOnCall {
+            name: $name.to_string(),
+        };
+        Box::new(trigger) as Box<dyn $crate::builder::PartialElement<_>>
+    }};
+}
+
+#[macro_export]
+macro_rules! on_set {
+    ($name:expr) => {{
+        let trigger = $crate::builder::PartialOnSet {
+            name: $name.to_string(),
+        };
+        Box::new(trigger) as Box<dyn $crate::builder::PartialElement<_>>
+    }};
+}
+
+#[macro_export]
+macro_rules! when {
+    ($name:expr) => {
+        $crate::on_set!($name)
+    };
+}
+
+#[macro_export]
 macro_rules! effect {
     ($operation:expr) => {{
         let effect = $crate::builder::PartialEffect {
@@ -105,6 +132,72 @@ macro_rules! effect {
             operations: vec![$($operation),*],
         };
         Box::new(effect) as Box<dyn $crate::builder::PartialElement<_>>
+    }};
+}
+
+#[macro_export]
+macro_rules! operation {
+    ($name:expr, $operation:expr) => {{
+        let operation = $crate::builder::PartialOperation {
+            name: $name.to_string(),
+            action: $operation,
+        };
+        Box::new(operation) as Box<dyn $crate::builder::PartialElement<_>>
+    }};
+}
+
+#[macro_export]
+macro_rules! guard_operation {
+    ($name:expr, $operation:expr) => {{
+        let operation = $crate::builder::PartialGuardOperation {
+            name: $name.to_string(),
+            guard: $operation,
+        };
+        Box::new(operation) as Box<dyn $crate::builder::PartialElement<_>>
+    }};
+}
+
+#[macro_export]
+macro_rules! entry_operation {
+    ($name:expr) => {{
+        let operation = $crate::builder::PartialBehaviorOperation {
+            name: $name.to_string(),
+            role: $crate::builder::BehaviorRole::Entry,
+        };
+        Box::new(operation) as Box<dyn $crate::builder::PartialElement<_>>
+    }};
+}
+
+#[macro_export]
+macro_rules! exit_operation {
+    ($name:expr) => {{
+        let operation = $crate::builder::PartialBehaviorOperation {
+            name: $name.to_string(),
+            role: $crate::builder::BehaviorRole::Exit,
+        };
+        Box::new(operation) as Box<dyn $crate::builder::PartialElement<_>>
+    }};
+}
+
+#[macro_export]
+macro_rules! activity_operation {
+    ($name:expr) => {{
+        let operation = $crate::builder::PartialBehaviorOperation {
+            name: $name.to_string(),
+            role: $crate::builder::BehaviorRole::Activity,
+        };
+        Box::new(operation) as Box<dyn $crate::builder::PartialElement<_>>
+    }};
+}
+
+#[macro_export]
+macro_rules! effect_operation {
+    ($name:expr) => {{
+        let operation = $crate::builder::PartialBehaviorOperation {
+            name: $name.to_string(),
+            role: $crate::builder::BehaviorRole::Effect,
+        };
+        Box::new(operation) as Box<dyn $crate::builder::PartialElement<_>>
     }};
 }
 
@@ -151,6 +244,16 @@ macro_rules! guard {
 }
 
 #[macro_export]
+macro_rules! guard_operation_ref {
+    ($name:expr) => {{
+        let guard = $crate::builder::PartialGuardOperationRef {
+            name: $name.to_string(),
+        };
+        Box::new(guard) as Box<dyn $crate::builder::PartialElement<_>>
+    }};
+}
+
+#[macro_export]
 macro_rules! activity {
     ($operation:expr) => {{
         let activity = $crate::builder::PartialActivity {
@@ -176,6 +279,68 @@ macro_rules! choice {
             };
             Box::new(choice) as Box<dyn $crate::builder::PartialElement<_>>
         }
+    };
+}
+
+#[macro_export]
+macro_rules! shallow_history {
+    ($name:expr $(,)?) => {
+        {
+            let history = $crate::builder::PartialHistory {
+                name: $name.to_string(),
+                kind: $crate::kind::SHALLOW_HISTORY,
+                elements: vec![],
+            };
+            Box::new(history) as Box<dyn $crate::builder::PartialElement<_>>
+        }
+    };
+    ($name:expr, $($element:expr),* $(,)?) => {
+        {
+            let history = $crate::builder::PartialHistory {
+                name: $name.to_string(),
+                kind: $crate::kind::SHALLOW_HISTORY,
+                elements: vec![$($element),*],
+            };
+            Box::new(history) as Box<dyn $crate::builder::PartialElement<_>>
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! deep_history {
+    ($name:expr $(,)?) => {
+        {
+            let history = $crate::builder::PartialHistory {
+                name: $name.to_string(),
+                kind: $crate::kind::DEEP_HISTORY,
+                elements: vec![],
+            };
+            Box::new(history) as Box<dyn $crate::builder::PartialElement<_>>
+        }
+    };
+    ($name:expr, $($element:expr),* $(,)?) => {
+        {
+            let history = $crate::builder::PartialHistory {
+                name: $name.to_string(),
+                kind: $crate::kind::DEEP_HISTORY,
+                elements: vec![$($element),*],
+            };
+            Box::new(history) as Box<dyn $crate::builder::PartialElement<_>>
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! ShallowHistory {
+    ($($tt:tt)*) => {
+        $crate::shallow_history!($($tt)*)
+    };
+}
+
+#[macro_export]
+macro_rules! DeepHistory {
+    ($($tt:tt)*) => {
+        $crate::deep_history!($($tt)*)
     };
 }
 
@@ -218,6 +383,16 @@ macro_rules! after {
             duration_fn: $duration_fn,
         };
         Box::new(after) as Box<dyn $crate::builder::PartialElement<_>>
+    }};
+}
+
+#[macro_export]
+macro_rules! at {
+    ($timepoint_fn:expr) => {{
+        let at = $crate::builder::PartialAt {
+            timepoint_fn: $timepoint_fn,
+        };
+        Box::new(at) as Box<dyn $crate::builder::PartialElement<_>>
     }};
 }
 

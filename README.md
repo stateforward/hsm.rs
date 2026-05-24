@@ -19,7 +19,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-rust = "0.1.0"
+rust = "0.2.0"
 
 [dev-dependencies]
 tokio = { version = "1.0", features = ["full"] }

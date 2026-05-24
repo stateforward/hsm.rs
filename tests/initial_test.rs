@@ -1,10 +1,9 @@
+use rust::*;
 /**
  * @fileoverview Tests for initial transitions in HSM
  * Tests initial state behavior, automatic transitions, and initial target resolution
  */
-
 use std::time::Duration;
-use rust::*;
 
 // Test instance for initial transition tests
 #[derive(Debug)]
@@ -24,15 +23,15 @@ impl InitialTestInstance {
             initialized: false,
         }
     }
-    
+
     pub fn log_entry(&mut self, state: &str) {
         self.entry_calls.push(format!("enter_{}", state));
     }
-    
+
     pub fn increment_transitions(&mut self) {
         self.transition_count += 1;
     }
-    
+
     pub fn mark_initialized(&mut self) {
         self.initialized = true;
     }
@@ -49,25 +48,41 @@ impl Instance for InitialTestInstance {
 }
 
 // Entry action functions
-fn init_entry(_ctx: &Context, inst: &mut InitialTestInstance, _event: &Event) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
+fn init_entry(
+    _ctx: &Context,
+    inst: &mut InitialTestInstance,
+    _event: &Event,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
     inst.log_entry("init");
     inst.mark_initialized();
     Box::pin(async move {})
 }
 
-fn ready_entry(_ctx: &Context, inst: &mut InitialTestInstance, _event: &Event) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
+fn ready_entry(
+    _ctx: &Context,
+    inst: &mut InitialTestInstance,
+    _event: &Event,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
     inst.log_entry("ready");
     inst.current_state = "ready".to_string();
     Box::pin(async move {})
 }
 
-fn running_entry(_ctx: &Context, inst: &mut InitialTestInstance, _event: &Event) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
+fn running_entry(
+    _ctx: &Context,
+    inst: &mut InitialTestInstance,
+    _event: &Event,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
     inst.log_entry("running");
     inst.current_state = "running".to_string();
     Box::pin(async move {})
 }
 
-fn nested_entry(_ctx: &Context, inst: &mut InitialTestInstance, _event: &Event) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
+fn nested_entry(
+    _ctx: &Context,
+    inst: &mut InitialTestInstance,
+    _event: &Event,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
     inst.log_entry("nested");
     inst.current_state = "nested".to_string();
     Box::pin(async move {})
@@ -79,16 +94,18 @@ fn test_simple_initial_transition() {
     let ctx = Context::new();
 
     // Test basic initial transition to a target state
-    let model: Model<InitialTestInstance> = define!("SimpleInitialMachine",
+    let model: Model<InitialTestInstance> = define!(
+        "SimpleInitialMachine",
         initial!(target!("ready")),
-        state!("ready", 
-            entry!(ready_entry)
-        )
+        state!("ready", entry!(ready_entry))
     );
 
     // Model should validate successfully
     let validation_result = validate(&model);
-    assert!(validation_result.is_ok(), "Simple initial machine should validate");
+    assert!(
+        validation_result.is_ok(),
+        "Simple initial machine should validate"
+    );
 
     // HSM should start successfully
     let hsm_result = start(&ctx, instance, model);
@@ -101,17 +118,17 @@ fn test_nested_initial_transition() {
     let ctx = Context::new();
 
     // Test initial transition to nested state
-    let model: Model<InitialTestInstance> = define!("NestedInitialMachine",
+    let model: Model<InitialTestInstance> = define!(
+        "NestedInitialMachine",
         initial!(target!("parent/child")),
-        state!("parent",
-            state!("child",
-                entry!(nested_entry)
-            )
-        )
+        state!("parent", state!("child", entry!(nested_entry)))
     );
 
     let validation_result = validate(&model);
-    assert!(validation_result.is_ok(), "Nested initial machine should validate");
+    assert!(
+        validation_result.is_ok(),
+        "Nested initial machine should validate"
+    );
 
     let hsm_result = start(&ctx, instance, model);
     assert!(hsm_result.is_ok(), "Nested initial machine should start");
@@ -123,15 +140,17 @@ fn test_absolute_path_initial() {
     let ctx = Context::new();
 
     // Test initial transition using absolute path
-    let model: Model<InitialTestInstance> = define!("AbsoluteInitialMachine",
+    let model: Model<InitialTestInstance> = define!(
+        "AbsoluteInitialMachine",
         initial!(target!("/AbsoluteInitialMachine/target_state")),
-        state!("target_state",
-            entry!(ready_entry)
-        )
+        state!("target_state", entry!(ready_entry))
     );
 
     let validation_result = validate(&model);
-    assert!(validation_result.is_ok(), "Absolute path initial should validate");
+    assert!(
+        validation_result.is_ok(),
+        "Absolute path initial should validate"
+    );
 
     let hsm_result = start(&ctx, instance, model);
     assert!(hsm_result.is_ok(), "Absolute path initial should start");
@@ -143,22 +162,26 @@ fn test_hierarchical_initial_chain() {
     let ctx = Context::new();
 
     // Test hierarchical state with nested initial transitions
-    let model: Model<InitialTestInstance> = define!("HierarchicalInitialMachine",
+    let model: Model<InitialTestInstance> = define!(
+        "HierarchicalInitialMachine",
         initial!(target!("system")),
-        state!("system",
+        state!(
+            "system",
             entry!(init_entry),
             initial!(target!("subsystem")),
-            state!("subsystem",
+            state!(
+                "subsystem",
                 initial!(target!("component")),
-                state!("component",
-                    entry!(nested_entry)
-                )
+                state!("component", entry!(nested_entry))
             )
         )
     );
 
     let validation_result = validate(&model);
-    assert!(validation_result.is_ok(), "Hierarchical initial should validate");
+    assert!(
+        validation_result.is_ok(),
+        "Hierarchical initial should validate"
+    );
 
     let hsm_result = start(&ctx, instance, model);
     assert!(hsm_result.is_ok(), "Hierarchical initial should start");
@@ -170,25 +193,27 @@ fn test_multiple_initial_states() {
     let ctx = Context::new();
 
     // Test machine with separate initial states in different regions
-    let model: Model<InitialTestInstance> = define!("MultiInitialMachine",
+    let model: Model<InitialTestInstance> = define!(
+        "MultiInitialMachine",
         initial!(target!("region1")),
-        state!("region1",
+        state!(
+            "region1",
             entry!(init_entry),
             initial!(target!("state1")),
-            state!("state1",
-                entry!(ready_entry)
-            )
+            state!("state1", entry!(ready_entry))
         ),
-        state!("region2", 
+        state!(
+            "region2",
             initial!(target!("state2")),
-            state!("state2",
-                entry!(running_entry)
-            )
+            state!("state2", entry!(running_entry))
         )
     );
 
     let validation_result = validate(&model);
-    assert!(validation_result.is_ok(), "Multi-initial machine should validate");
+    assert!(
+        validation_result.is_ok(),
+        "Multi-initial machine should validate"
+    );
 
     let hsm_result = start(&ctx, instance, model);
     assert!(hsm_result.is_ok(), "Multi-initial machine should start");
@@ -200,7 +225,11 @@ async fn test_initial_with_async_entry() {
     let ctx = Context::new();
 
     // Entry action that performs async work
-    fn async_init_entry(_ctx: &Context, inst: &mut InitialTestInstance, _event: &Event) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
+    fn async_init_entry(
+        _ctx: &Context,
+        inst: &mut InitialTestInstance,
+        _event: &Event,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
         inst.log_entry("async_init");
         inst.mark_initialized();
         Box::pin(async move {
@@ -209,19 +238,22 @@ async fn test_initial_with_async_entry() {
         })
     }
 
-    let model: Model<InitialTestInstance> = define!("AsyncInitialMachine",
+    let model: Model<InitialTestInstance> = define!(
+        "AsyncInitialMachine",
         initial!(target!("initializing")),
-        state!("initializing",
+        state!(
+            "initializing",
             entry!(async_init_entry),
             transition!(on!("complete"), target!("../ready"))
         ),
-        state!("ready",
-            entry!(ready_entry)
-        )
+        state!("ready", entry!(ready_entry))
     );
 
     let validation_result = validate(&model);
-    assert!(validation_result.is_ok(), "Async initial machine should validate");
+    assert!(
+        validation_result.is_ok(),
+        "Async initial machine should validate"
+    );
 
     let hsm_result = start(&ctx, instance, model);
     assert!(hsm_result.is_ok(), "Async initial machine should start");
@@ -230,44 +262,46 @@ async fn test_initial_with_async_entry() {
 #[test]
 fn test_initial_state_macro_variations() {
     let instance = InitialTestInstance::new();
-    
+
     // Test different ways to specify initial targets
-    
+
     // Direct state name
     let _target1: Box<dyn PartialElement<InitialTestInstance>> = target!("state1");
-    
+
     // Relative path
     let _target2: Box<dyn PartialElement<InitialTestInstance>> = target!("../sibling");
-    
+
     // Nested path
     let _target3: Box<dyn PartialElement<InitialTestInstance>> = target!("parent/child");
-    
+
     // Absolute path
     let _target4: Box<dyn PartialElement<InitialTestInstance>> = target!("/Machine/state");
-    
+
     // Initial with target
     let _initial1: Box<dyn PartialElement<InitialTestInstance>> = initial!(target!("ready"));
-    
+
     // All should compile without errors
     assert!(true, "All initial macro variations should compile");
 }
 
-#[test] 
+#[test]
 fn test_initial_target_validation() {
     let instance = InitialTestInstance::new();
     let ctx = Context::new();
 
     // Test that initial targets are validated
-    let model: Model<InitialTestInstance> = define!("ValidInitialMachine",
+    let model: Model<InitialTestInstance> = define!(
+        "ValidInitialMachine",
         initial!(target!("existing_state")),
-        state!("existing_state",
-            entry!(ready_entry)
-        )
+        state!("existing_state", entry!(ready_entry))
     );
 
     // Should validate successfully when target exists
     let validation_result = validate(&model);
-    assert!(validation_result.is_ok(), "Valid initial target should pass validation");
+    assert!(
+        validation_result.is_ok(),
+        "Valid initial target should pass validation"
+    );
 
     let hsm_result = start(&ctx, instance, model);
     assert!(hsm_result.is_ok(), "Valid initial machine should start");
@@ -277,34 +311,32 @@ fn test_initial_target_validation() {
 fn test_initial_state_patterns() {
     // Test that initial states follow expected patterns
     let instance = InitialTestInstance::new();
-    
+
     // Pattern 1: Machine starts with initial transition
-    let model1: Model<InitialTestInstance> = define!("Pattern1Machine",
+    let model1: Model<InitialTestInstance> = define!(
+        "Pattern1Machine",
         initial!(target!("start")),
         state!("start")
     );
-    
-    // Pattern 2: Nested states have their own initials  
-    let model2: Model<InitialTestInstance> = define!("Pattern2Machine",
+
+    // Pattern 2: Nested states have their own initials
+    let model2: Model<InitialTestInstance> = define!(
+        "Pattern2Machine",
         initial!(target!("parent")),
-        state!("parent",
-            initial!(target!("child")),
-            state!("child")
-        )
+        state!("parent", initial!(target!("child")), state!("child"))
     );
-    
+
     // Pattern 3: Multiple levels of nesting
-    let model3: Model<InitialTestInstance> = define!("Pattern3Machine",
+    let model3: Model<InitialTestInstance> = define!(
+        "Pattern3Machine",
         initial!(target!("level1")),
-        state!("level1",
+        state!(
+            "level1",
             initial!(target!("level2")),
-            state!("level2",
-                initial!(target!("level3")),
-                state!("level3")
-            )
+            state!("level2", initial!(target!("level3")), state!("level3"))
         )
     );
-    
+
     // All patterns should validate
     assert!(validate(&model1).is_ok(), "Pattern 1 should validate");
     assert!(validate(&model2).is_ok(), "Pattern 2 should validate");
@@ -318,9 +350,11 @@ fn test_initial_pseudostate_behavior() {
 
     // Initial pseudostates should not have entry/exit actions or transitions
     // This is enforced by the macro system - initial only takes target
-    let model: Model<InitialTestInstance> = define!("PseudostateMachine",
+    let model: Model<InitialTestInstance> = define!(
+        "PseudostateMachine",
         initial!(target!("real_state")),
-        state!("real_state",
+        state!(
+            "real_state",
             entry!(ready_entry),
             transition!(on!("event"), target!("other_state"))
         ),
@@ -328,7 +362,10 @@ fn test_initial_pseudostate_behavior() {
     );
 
     let validation_result = validate(&model);
-    assert!(validation_result.is_ok(), "Pseudostate machine should validate");
+    assert!(
+        validation_result.is_ok(),
+        "Pseudostate machine should validate"
+    );
 
     let hsm_result = start(&ctx, instance, model);
     assert!(hsm_result.is_ok(), "Pseudostate machine should start");

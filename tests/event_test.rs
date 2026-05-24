@@ -124,7 +124,7 @@ fn test_event_clone() {
 fn test_event_debug() {
     let event = Event::new("debug_test");
     let debug_str = format!("{:?}", event);
-    
+
     assert!(debug_str.contains("Event"));
     assert!(debug_str.contains("debug_test"));
     assert!(debug_str.contains("kind"));
@@ -133,7 +133,7 @@ fn test_event_debug() {
 #[test]
 fn test_event_data_types() {
     // Test various data types
-    
+
     // String data
     let str_event = Event::new("str").with_data("hello".to_string());
     if let Some(data) = &str_event.data {
@@ -143,7 +143,10 @@ fn test_event_data_types() {
     // Vector data
     let vec_event = Event::new("vec").with_data(vec![1, 2, 3, 4, 5]);
     if let Some(data) = &vec_event.data {
-        assert_eq!(data.downcast_ref::<Vec<i32>>().unwrap(), &vec![1, 2, 3, 4, 5]);
+        assert_eq!(
+            data.downcast_ref::<Vec<i32>>().unwrap(),
+            &vec![1, 2, 3, 4, 5]
+        );
     }
 
     // Tuple data
@@ -164,12 +167,12 @@ fn test_event_data_types() {
 #[test]
 fn test_event_data_downcast_fail() {
     let event = Event::new("test").with_data(42i32);
-    
+
     if let Some(data) = &event.data {
         // Try to downcast to wrong type
         assert!(data.downcast_ref::<String>().is_none());
         assert!(data.downcast_ref::<f64>().is_none());
-        
+
         // Correct type should work
         assert!(data.downcast_ref::<i32>().is_some());
     }
@@ -178,9 +181,8 @@ fn test_event_data_downcast_fail() {
 #[test]
 fn test_event_builder_pattern() {
     // Test that with_data consumes and returns self
-    let event = Event::new("builder")
-        .with_data("some data");
-    
+    let event = Event::new("builder").with_data("some data");
+
     assert_eq!(event.name, "builder");
     assert!(event.data.is_some());
 }

@@ -1,8 +1,8 @@
 // Event types
 
+use crate::kind::{self, KindValue};
 use std::any::Any;
 use std::sync::Arc;
-use crate::kind::{self, KindValue};
 
 #[derive(Debug)]
 pub struct Event {
@@ -43,7 +43,7 @@ impl Event {
             data: Some(Arc::new(value)),
         }
     }
-    
+
     pub fn get_data<T: Any>(&self) -> Option<&T> {
         self.data.as_ref()?.downcast_ref::<T>()
     }
@@ -68,6 +68,17 @@ impl Event {
         }
     }
 
+    pub fn call(name: impl Into<String>) -> Self {
+        let name = name.into();
+        let event_name = call_event_name(&name);
+        Self {
+            kind: kind::CALL_EVENT,
+            qualified_name: name,
+            name: event_name,
+            data: None,
+        }
+    }
+
     pub fn error_event() -> Self {
         Self {
             kind: kind::ERROR_EVENT,
@@ -76,6 +87,10 @@ impl Event {
             data: None,
         }
     }
+}
+
+pub fn call_event_name(name: &str) -> String {
+    format!("hsm_call:{name}")
 }
 
 // Standard events

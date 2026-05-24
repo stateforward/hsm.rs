@@ -1,8 +1,10 @@
 // Builder functions for macros
 
-use crate::builder::*;
-use crate::element::{Instance, EntryFn, ExitFn, EffectFn, ActivityFn, GuardFn, DurationFn};
 use crate::builder::PartialElement;
+use crate::builder::*;
+use crate::element::{
+    ActivityFn, DurationFn, EffectFn, EntryFn, ExitFn, GuardFn, Instance, TimepointFn,
+};
 use std::time::Duration;
 
 /// Create a state element
@@ -44,6 +46,28 @@ pub fn create_choice<T: Instance + 'static>(
     })
 }
 
+pub fn create_shallow_history<T: Instance + 'static>(
+    name: &str,
+    partials: Vec<Box<dyn PartialElement<T>>>,
+) -> Box<dyn PartialElement<T>> {
+    Box::new(PartialHistory {
+        name: name.to_string(),
+        kind: crate::kind::SHALLOW_HISTORY,
+        elements: partials,
+    })
+}
+
+pub fn create_deep_history<T: Instance + 'static>(
+    name: &str,
+    partials: Vec<Box<dyn PartialElement<T>>>,
+) -> Box<dyn PartialElement<T>> {
+    Box::new(PartialHistory {
+        name: name.to_string(),
+        kind: crate::kind::DEEP_HISTORY,
+        elements: partials,
+    })
+}
+
 /// Create a transition element
 pub fn create_transition<T: Instance + 'static>(
     elements: Vec<Box<dyn PartialElement<T>>>,
@@ -70,45 +94,60 @@ pub fn create_target<T: Instance + 'static>(path: &str) -> Box<dyn PartialElemen
 
 /// Create an entry action element
 pub fn create_entry<T: Instance + 'static>(action: EntryFn<T>) -> Box<dyn PartialElement<T>> {
-    Box::new(PartialEntry { operations: vec![action] })
+    Box::new(PartialEntry {
+        operations: vec![action],
+    })
 }
 
 /// Create an exit action element
 pub fn create_exit<T: Instance + 'static>(action: ExitFn<T>) -> Box<dyn PartialElement<T>> {
-    Box::new(PartialExit { operations: vec![action] })
+    Box::new(PartialExit {
+        operations: vec![action],
+    })
 }
 
 /// Create an effect element
 pub fn create_effect<T: Instance + 'static>(action: EffectFn<T>) -> Box<dyn PartialElement<T>> {
-    Box::new(PartialEffect { operations: vec![action] })
+    Box::new(PartialEffect {
+        operations: vec![action],
+    })
 }
 
 /// Create a guard element
 pub fn create_guard<T: Instance + 'static>(condition: GuardFn<T>) -> Box<dyn PartialElement<T>> {
-    Box::new(PartialGuard { expression: condition })
+    Box::new(PartialGuard {
+        expression: condition,
+    })
 }
 
 /// Create an activity element
-pub fn create_activity<T: Instance + 'static>(activity: ActivityFn<T>) -> Box<dyn PartialElement<T>> {
-    Box::new(PartialActivity { operations: vec![activity] })
+pub fn create_activity<T: Instance + 'static>(
+    activity: ActivityFn<T>,
+) -> Box<dyn PartialElement<T>> {
+    Box::new(PartialActivity {
+        operations: vec![activity],
+    })
 }
 
 /// Create an after timer element
-pub fn create_after<T: Instance + 'static>(duration_fn: DurationFn<T>) -> Box<dyn PartialElement<T>> {
-    // Create a timer-based transition
-    // This would need to be implemented in the builder
-    Box::new(PartialTrigger {
-        events: vec!["__after_timer".to_string()],
-    })
+pub fn create_after<T: Instance + 'static>(
+    duration_fn: DurationFn<T>,
+) -> Box<dyn PartialElement<T>> {
+    Box::new(PartialAfter { duration_fn })
+}
+
+/// Create an absolute timer element
+pub fn create_at<T: Instance + 'static>(
+    timepoint_fn: TimepointFn<T>,
+) -> Box<dyn PartialElement<T>> {
+    Box::new(PartialAt { timepoint_fn })
 }
 
 /// Create an every timer element
-pub fn create_every<T: Instance + 'static>(duration_fn: DurationFn<T>) -> Box<dyn PartialElement<T>> {
-    // Create a periodic timer-based transition
-    // This would need to be implemented in the builder
-    Box::new(PartialTrigger {
-        events: vec!["__every_timer".to_string()],
-    })
+pub fn create_every<T: Instance + 'static>(
+    duration_fn: DurationFn<T>,
+) -> Box<dyn PartialElement<T>> {
+    Box::new(PartialEvery { duration_fn })
 }
 
 /// Create a defer element

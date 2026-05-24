@@ -1,11 +1,10 @@
+use rust::*;
 /**
  * @fileoverview Test guard conditions and transition evaluation
  * Tests synchronous guards, complex conditions, and guard evaluation order
  */
-
 use std::future::Future;
 use std::pin::Pin;
-use rust::*;
 
 #[derive(Debug)]
 pub struct GuardTestInstance {
@@ -100,28 +99,48 @@ fn event_data_guard(_ctx: &Context, _inst: &GuardTestInstance, event: &Event) ->
 }
 
 // Effect and entry functions
-fn increment_effect(_ctx: &Context, inst: &mut GuardTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn increment_effect(
+    _ctx: &Context,
+    inst: &mut GuardTestInstance,
+    _event: &Event,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     inst.increment();
     inst.log_action(&format!("increment-effect-{}", inst.counter));
     Box::pin(async move {})
 }
 
-fn passed_effect(_ctx: &Context, inst: &mut GuardTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn passed_effect(
+    _ctx: &Context,
+    inst: &mut GuardTestInstance,
+    _event: &Event,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     inst.log_action("passed-effect");
     Box::pin(async move {})
 }
 
-fn failed_effect(_ctx: &Context, inst: &mut GuardTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn failed_effect(
+    _ctx: &Context,
+    inst: &mut GuardTestInstance,
+    _event: &Event,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     inst.log_action("failed-effect");
     Box::pin(async move {})
 }
 
-fn state_entry(_ctx: &Context, inst: &mut GuardTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn state_entry(
+    _ctx: &Context,
+    inst: &mut GuardTestInstance,
+    _event: &Event,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     inst.log_action("state-entry");
     Box::pin(async move {})
 }
 
-fn setup_ready(_ctx: &Context, inst: &mut GuardTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn setup_ready(
+    _ctx: &Context,
+    inst: &mut GuardTestInstance,
+    _event: &Event,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     inst.set_status("ready");
     inst.set_flag("enabled", true);
     inst.log_action("setup-ready");
@@ -134,10 +153,17 @@ async fn test_simple_guard_conditions() -> Result<()> {
     instance.counter = 5; // Start with counter > 3
     let ctx = Context::new();
 
-    let model = define!("SimpleGuardMachine",
+    let model = define!(
+        "SimpleGuardMachine",
         initial!(target!("waiting")),
-        state!("waiting",
-            transition!(on!("check"), guard!(counter_greater_than_3), target!("passed"), effect!(passed_effect)),
+        state!(
+            "waiting",
+            transition!(
+                on!("check"),
+                guard!(counter_greater_than_3),
+                target!("passed"),
+                effect!(passed_effect)
+            ),
             transition!(on!("check"), target!("failed"), effect!(failed_effect))
         ),
         state!("passed"),
@@ -152,7 +178,10 @@ async fn test_simple_guard_conditions() -> Result<()> {
     hsm.dispatch(&ctx, check_event).await;
 
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<GuardTestInstance>().unwrap();
+    let inst = instance
+        .as_any()
+        .downcast_ref::<GuardTestInstance>()
+        .unwrap();
     assert_eq!(inst.log, vec!["passed-effect"]);
     assert_eq!(hsm.state(), "/SimpleGuardMachine/passed");
 
@@ -165,10 +194,17 @@ async fn test_guard_failure_fallback() -> Result<()> {
     instance.counter = 2; // Start with counter <= 3
     let ctx = Context::new();
 
-    let model = define!("GuardFallbackMachine",
+    let model = define!(
+        "GuardFallbackMachine",
         initial!(target!("waiting")),
-        state!("waiting",
-            transition!(on!("check"), guard!(counter_greater_than_3), target!("passed"), effect!(passed_effect)),
+        state!(
+            "waiting",
+            transition!(
+                on!("check"),
+                guard!(counter_greater_than_3),
+                target!("passed"),
+                effect!(passed_effect)
+            ),
             transition!(on!("check"), target!("failed"), effect!(failed_effect))
         ),
         state!("passed"),
@@ -183,7 +219,10 @@ async fn test_guard_failure_fallback() -> Result<()> {
     hsm.dispatch(&ctx, check_event).await;
 
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<GuardTestInstance>().unwrap();
+    let inst = instance
+        .as_any()
+        .downcast_ref::<GuardTestInstance>()
+        .unwrap();
     assert_eq!(inst.log, vec!["failed-effect"]);
     assert_eq!(hsm.state(), "/GuardFallbackMachine/failed");
 
@@ -196,11 +235,23 @@ async fn test_multiple_guards_evaluation_order() -> Result<()> {
     instance.counter = 8; // Satisfies both counter > 3 and counter < 10
     let ctx = Context::new();
 
-    let model = define!("MultipleGuardMachine",
+    let model = define!(
+        "MultipleGuardMachine",
         initial!(target!("waiting")),
-        state!("waiting",
-            transition!(on!("test"), guard!(counter_greater_than_3), target!("first"), effect!(passed_effect)),
-            transition!(on!("test"), guard!(counter_less_than_10), target!("second"), effect!(failed_effect)),
+        state!(
+            "waiting",
+            transition!(
+                on!("test"),
+                guard!(counter_greater_than_3),
+                target!("first"),
+                effect!(passed_effect)
+            ),
+            transition!(
+                on!("test"),
+                guard!(counter_less_than_10),
+                target!("second"),
+                effect!(failed_effect)
+            ),
             transition!(on!("test"), target!("default"))
         ),
         state!("first"),
@@ -216,7 +267,10 @@ async fn test_multiple_guards_evaluation_order() -> Result<()> {
     hsm.dispatch(&ctx, test_event).await;
 
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<GuardTestInstance>().unwrap();
+    let inst = instance
+        .as_any()
+        .downcast_ref::<GuardTestInstance>()
+        .unwrap();
     assert_eq!(inst.log, vec!["passed-effect"]);
     assert_eq!(hsm.state(), "/MultipleGuardMachine/first");
 
@@ -228,14 +282,21 @@ async fn test_complex_guard_conditions() -> Result<()> {
     let instance = GuardTestInstance::new();
     let ctx = Context::new();
 
-    let model = define!("ComplexGuardMachine",
+    let model = define!(
+        "ComplexGuardMachine",
         initial!(target!("setup")),
-        state!("setup",
+        state!(
+            "setup",
             entry!(setup_ready),
             transition!(on!("prepare"), effect!(increment_effect))
         ),
-        state!("testing",
-            transition!(on!("complex_check"), guard!(complex_condition), target!("success")),
+        state!(
+            "testing",
+            transition!(
+                on!("complex_check"),
+                guard!(complex_condition),
+                target!("success")
+            ),
             transition!(on!("complex_check"), target!("failure"))
         ),
         state!("success"),
@@ -247,7 +308,10 @@ async fn test_complex_guard_conditions() -> Result<()> {
 
     // Setup state should prepare the conditions
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<GuardTestInstance>().unwrap();
+    let inst = instance
+        .as_any()
+        .downcast_ref::<GuardTestInstance>()
+        .unwrap();
     assert_eq!(inst.status, "ready");
     assert!(inst.get_flag("enabled"));
     drop(instance);
@@ -260,16 +324,26 @@ async fn test_complex_guard_conditions() -> Result<()> {
 
     // Manually transition to testing state for this test
     // (In real implementation, this would be through proper state transitions)
-    let hsm2 = start(&ctx, GuardTestInstance::new(), define!("ComplexGuardMachine2",
-        initial!(target!("testing")),
-        state!("testing",
-            entry!(setup_ready),
-            transition!(on!("complex_check"), guard!(complex_condition), target!("success")),
-            transition!(on!("complex_check"), target!("failure"))
+    let hsm2 = start(
+        &ctx,
+        GuardTestInstance::new(),
+        define!(
+            "ComplexGuardMachine2",
+            initial!(target!("testing")),
+            state!(
+                "testing",
+                entry!(setup_ready),
+                transition!(
+                    on!("complex_check"),
+                    guard!(complex_condition),
+                    target!("success")
+                ),
+                transition!(on!("complex_check"), target!("failure"))
+            ),
+            state!("success"),
+            state!("failure")
         ),
-        state!("success"),
-        state!("failure")
-    ))?;
+    )?;
     hsm2.start().await;
 
     // Prepare the instance for complex condition
@@ -290,10 +364,17 @@ async fn test_guards_with_event_data() -> Result<()> {
     let instance = GuardTestInstance::new();
     let ctx = Context::new();
 
-    let model1 = define!("EventDataGuardMachine",
+    let model1 = define!(
+        "EventDataGuardMachine",
         initial!(target!("waiting")),
-        state!("waiting",
-            transition!(on!("process"), guard!(event_data_guard), target!("positive"), effect!(passed_effect)),
+        state!(
+            "waiting",
+            transition!(
+                on!("process"),
+                guard!(event_data_guard),
+                target!("positive"),
+                effect!(passed_effect)
+            ),
             transition!(on!("process"), target!("negative"), effect!(failed_effect))
         ),
         state!("positive"),
@@ -308,16 +389,26 @@ async fn test_guards_with_event_data() -> Result<()> {
     hsm.dispatch(&ctx, positive_event).await;
 
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<GuardTestInstance>().unwrap();
+    let inst = instance
+        .as_any()
+        .downcast_ref::<GuardTestInstance>()
+        .unwrap();
     assert_eq!(inst.log, vec!["passed-effect"]);
     assert_eq!(hsm.state(), "/EventDataGuardMachine/positive");
     drop(instance);
 
     // Reset and test with negative data - create new model
-    let model2 = define!("EventDataGuardMachine2",
+    let model2 = define!(
+        "EventDataGuardMachine2",
         initial!(target!("waiting")),
-        state!("waiting",
-            transition!(on!("process"), guard!(event_data_guard), target!("positive"), effect!(passed_effect)),
+        state!(
+            "waiting",
+            transition!(
+                on!("process"),
+                guard!(event_data_guard),
+                target!("positive"),
+                effect!(passed_effect)
+            ),
             transition!(on!("process"), target!("negative"), effect!(failed_effect))
         ),
         state!("positive"),
@@ -330,7 +421,10 @@ async fn test_guards_with_event_data() -> Result<()> {
     hsm2.dispatch(&ctx, negative_event).await;
 
     let instance = hsm2.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<GuardTestInstance>().unwrap();
+    let inst = instance
+        .as_any()
+        .downcast_ref::<GuardTestInstance>()
+        .unwrap();
     assert_eq!(inst.log, vec!["failed-effect"]);
     assert_eq!(hsm2.state(), "/EventDataGuardMachine2/negative");
 
@@ -342,20 +436,31 @@ async fn test_guards_with_state_changes() -> Result<()> {
     let instance = GuardTestInstance::new();
     let ctx = Context::new();
 
-    fn change_status(_ctx: &Context, inst: &mut GuardTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn change_status(
+        _ctx: &Context,
+        inst: &mut GuardTestInstance,
+        _event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         inst.set_status("working");
         inst.log_action("status-changed");
         Box::pin(async move {})
     }
 
-    let model = define!("StateChangeGuardMachine",
+    let model = define!(
+        "StateChangeGuardMachine",
         initial!(target!("idle")),
-        state!("idle",
+        state!(
+            "idle",
             transition!(on!("start"), target!("active"), effect!(change_status))
         ),
-        state!("active",
+        state!(
+            "active",
             transition!(on!("check_ready"), guard!(status_ready), target!("ready")),
-            transition!(on!("check_working"), guard!(status_working), target!("working")),
+            transition!(
+                on!("check_working"),
+                guard!(status_working),
+                target!("working")
+            ),
             transition!(on!("check_ready"), target!("not_ready")),
             transition!(on!("check_working"), target!("not_working"))
         ),
@@ -373,7 +478,10 @@ async fn test_guards_with_state_changes() -> Result<()> {
     hsm.dispatch(&ctx, start_event).await;
 
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<GuardTestInstance>().unwrap();
+    let inst = instance
+        .as_any()
+        .downcast_ref::<GuardTestInstance>()
+        .unwrap();
     assert_eq!(inst.status, "working");
     drop(instance);
 
@@ -390,11 +498,17 @@ async fn test_internal_transitions_with_guards() -> Result<()> {
     let instance = GuardTestInstance::new();
     let ctx = Context::new();
 
-    let model = define!("InternalGuardMachine",
+    let model = define!(
+        "InternalGuardMachine",
         initial!(target!("active")),
-        state!("active",
+        state!(
+            "active",
             entry!(state_entry),
-            transition!(on!("internal_check"), guard!(counter_greater_than_3), effect!(passed_effect)),
+            transition!(
+                on!("internal_check"),
+                guard!(counter_greater_than_3),
+                effect!(passed_effect)
+            ),
             transition!(on!("internal_check"), effect!(failed_effect)),
             transition!(on!("increment"), effect!(increment_effect))
         )
@@ -408,7 +522,10 @@ async fn test_internal_transitions_with_guards() -> Result<()> {
     hsm.dispatch(&ctx, check_event).await;
 
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<GuardTestInstance>().unwrap();
+    let inst = instance
+        .as_any()
+        .downcast_ref::<GuardTestInstance>()
+        .unwrap();
     assert_eq!(inst.log, vec!["state-entry", "failed-effect"]);
     drop(instance);
 
@@ -423,7 +540,10 @@ async fn test_internal_transitions_with_guards() -> Result<()> {
     hsm.dispatch(&ctx, check_event2).await;
 
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<GuardTestInstance>().unwrap();
+    let inst = instance
+        .as_any()
+        .downcast_ref::<GuardTestInstance>()
+        .unwrap();
     assert!(inst.log.contains(&"passed-effect".to_string()));
     // Should still be in same state (internal transition)
     assert_eq!(hsm.state(), "/InternalGuardMachine/active");
@@ -446,9 +566,11 @@ async fn test_guard_evaluation_performance() -> Result<()> {
         inst.counter > 0 && sum > 0
     }
 
-    let model = define!("PerformanceGuardMachine",
+    let model = define!(
+        "PerformanceGuardMachine",
         initial!(target!("testing")),
-        state!("testing",
+        state!(
+            "testing",
             transition!(on!("expensive"), guard!(expensive_guard), target!("passed")),
             transition!(on!("expensive"), target!("failed"))
         ),
@@ -466,7 +588,11 @@ async fn test_guard_evaluation_performance() -> Result<()> {
     let elapsed = start_time.elapsed();
 
     // Guard should execute quickly (within reasonable time)
-    assert!(elapsed.as_millis() < 100, "Guard took too long: {:?}", elapsed);
+    assert!(
+        elapsed.as_millis() < 100,
+        "Guard took too long: {:?}",
+        elapsed
+    );
     assert_eq!(hsm.state(), "/PerformanceGuardMachine/failed"); // counter starts at 0
 
     Ok(())
@@ -485,9 +611,11 @@ async fn test_guard_side_effects_warning() -> Result<()> {
         inst.counter > 2
     }
 
-    let model = define!("SideEffectGuardMachine",
+    let model = define!(
+        "SideEffectGuardMachine",
         initial!(target!("waiting")),
-        state!("waiting",
+        state!(
+            "waiting",
             transition!(on!("test"), guard!(side_effect_guard), target!("passed")),
             transition!(on!("test"), target!("failed")),
             transition!(on!("increment"), effect!(increment_effect))

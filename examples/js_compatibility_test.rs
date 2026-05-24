@@ -1,5 +1,5 @@
 // Test to verify Rust kind values match JavaScript values exactly
-use rust::{make_kind, kind, is_kind};
+use rust::{is_kind, kind, make_kind};
 
 fn main() {
     println!("=== JavaScript Compatibility Test ===");
@@ -51,35 +51,63 @@ fn main() {
     }
 
     println!("\n=== Results ===");
-    println!("Matches: {}/{} ({:.1}%)", matches, total, (matches as f64 / total as f64) * 100.0);
+    println!(
+        "Matches: {}/{} ({:.1}%)",
+        matches,
+        total,
+        (matches as f64 / total as f64) * 100.0
+    );
 
     if matches != total {
         println!("\n=== Diagnostic Information ===");
-        
+
         // Show what our macro produces for basic cases
         println!("Basic make_kind! values:");
         println!("  make_kind!(1) = {}", make_kind!(1));
-        println!("  make_kind!(2, {}) = {}", kind::ELEMENT, make_kind!(2, kind::ELEMENT));
-        println!("  make_kind!(3, {}) = {}", kind::NAMED_ELEMENT, make_kind!(3, kind::NAMED_ELEMENT));
-        
+        println!(
+            "  make_kind!(2, {}) = {}",
+            kind::ELEMENT,
+            make_kind!(2, kind::ELEMENT)
+        );
+        println!(
+            "  make_kind!(3, {}) = {}",
+            kind::NAMED_ELEMENT,
+            make_kind!(3, kind::NAMED_ELEMENT)
+        );
+
         // Show inheritance testing
         println!("\nInheritance tests:");
-        println!("  is_kind(NAMED_ELEMENT, ELEMENT) = {}", is_kind(kind::NAMED_ELEMENT, kind::ELEMENT));
-        println!("  is_kind(VERTEX, NAMED_ELEMENT) = {}", is_kind(kind::VERTEX, kind::NAMED_ELEMENT));
-        println!("  is_kind(STATE, VERTEX) = {}", is_kind(kind::STATE, kind::VERTEX));
-        
+        println!(
+            "  is_kind(NAMED_ELEMENT, ELEMENT) = {}",
+            is_kind(kind::NAMED_ELEMENT, kind::ELEMENT)
+        );
+        println!(
+            "  is_kind(VERTEX, NAMED_ELEMENT) = {}",
+            is_kind(kind::VERTEX, kind::NAMED_ELEMENT)
+        );
+        println!(
+            "  is_kind(STATE, VERTEX) = {}",
+            is_kind(kind::STATE, kind::VERTEX)
+        );
+
         println!("\nBinary representation examples:");
         println!("  ELEMENT = 0x{:x} ({})", kind::ELEMENT, kind::ELEMENT);
-        println!("  NAMED_ELEMENT = 0x{:x} ({})", kind::NAMED_ELEMENT, kind::NAMED_ELEMENT);
+        println!(
+            "  NAMED_ELEMENT = 0x{:x} ({})",
+            kind::NAMED_ELEMENT,
+            kind::NAMED_ELEMENT
+        );
         println!("  VERTEX = 0x{:x} ({})", kind::VERTEX, kind::VERTEX);
         println!("  STATE = 0x{:x} ({})", kind::STATE, kind::STATE);
-        
+
         println!("\nJavaScript expected patterns:");
         println!("  Vertex should be 259 = 0x{:x}", 259);
         println!("  Constraint should be 260 = 0x{:x}", 260);
         println!("  Behavior should be 261 = 0x{:x}", 261);
         println!("  We're getting much larger numbers, need to fix the algorithm");
     } else {
-        println!("🎉 All values match! The Rust macro system correctly replicates JavaScript values.");
+        println!(
+            "🎉 All values match! The Rust macro system correctly replicates JavaScript values."
+        );
     }
 }

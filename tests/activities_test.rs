@@ -1,14 +1,13 @@
+use rust::*;
 /**
  * @fileoverview Test activity execution and cancellation
  * Tests long-running activities, concurrent execution, and proper cancellation on state transitions
  */
-
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::time::Duration;
-use rust::*;
 
 #[derive(Debug)]
 pub struct ActivityTestInstance {
@@ -54,24 +53,32 @@ impl Instance for ActivityTestInstance {
 }
 
 // Activity functions
-fn quick_activity(ctx: &Context, inst: &mut ActivityTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn quick_activity(
+    ctx: &Context,
+    inst: &mut ActivityTestInstance,
+    _event: &Event,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     inst.record_activity_start("quick");
     let counter = inst.activity_counter.clone();
     let ctx_clone = ctx.clone();
-    
+
     Box::pin(async move {
         // Simulate very short work
         tokio::time::sleep(Duration::from_millis(10)).await;
-        
+
         counter.fetch_sub(1, Ordering::Relaxed);
     })
 }
 
-fn medium_activity(ctx: &Context, inst: &mut ActivityTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn medium_activity(
+    ctx: &Context,
+    inst: &mut ActivityTestInstance,
+    _event: &Event,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     inst.record_activity_start("medium");
     let counter = inst.activity_counter.clone();
     let ctx_clone = ctx.clone();
-    
+
     Box::pin(async move {
         // Simulate medium work with cancellation checks
         for i in 0..10 {
@@ -80,16 +87,20 @@ fn medium_activity(ctx: &Context, inst: &mut ActivityTestInstance, _event: &Even
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
-        
+
         counter.fetch_sub(1, Ordering::Relaxed);
     })
 }
 
-fn long_activity(ctx: &Context, inst: &mut ActivityTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn long_activity(
+    ctx: &Context,
+    inst: &mut ActivityTestInstance,
+    _event: &Event,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     inst.record_activity_start("long");
     let counter = inst.activity_counter.clone();
     let ctx_clone = ctx.clone();
-    
+
     Box::pin(async move {
         // Simulate long work with frequent cancellation checks
         for _i in 0..50 {
@@ -98,16 +109,20 @@ fn long_activity(ctx: &Context, inst: &mut ActivityTestInstance, _event: &Event)
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
-        
+
         counter.fetch_sub(1, Ordering::Relaxed);
     })
 }
 
-fn network_activity(ctx: &Context, inst: &mut ActivityTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn network_activity(
+    ctx: &Context,
+    inst: &mut ActivityTestInstance,
+    _event: &Event,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     inst.record_activity_start("network");
     let counter = inst.activity_counter.clone();
     let ctx_clone = ctx.clone();
-    
+
     Box::pin(async move {
         // Simulate network activity with retries
         for retry in 0..3 {
@@ -115,44 +130,52 @@ fn network_activity(ctx: &Context, inst: &mut ActivityTestInstance, _event: &Eve
                 break;
             }
             tokio::time::sleep(Duration::from_millis(50)).await;
-            
+
             // Simulate successful connection on last retry
             if retry == 2 && !ctx_clone.is_cancelled() {
                 break;
             }
         }
-        
+
         counter.fetch_sub(1, Ordering::Relaxed);
     })
 }
 
-fn monitoring_activity(ctx: &Context, inst: &mut ActivityTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn monitoring_activity(
+    ctx: &Context,
+    inst: &mut ActivityTestInstance,
+    _event: &Event,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     inst.record_activity_start("monitoring");
     let counter = inst.activity_counter.clone();
     let ctx_clone = ctx.clone();
-    
+
     Box::pin(async move {
         // Continuous monitoring loop
         while !ctx_clone.is_cancelled() {
             tokio::time::sleep(Duration::from_millis(30)).await;
         }
-        
+
         counter.fetch_sub(1, Ordering::Relaxed);
     })
 }
 
-fn data_activity(ctx: &Context, inst: &mut ActivityTestInstance, event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn data_activity(
+    ctx: &Context,
+    inst: &mut ActivityTestInstance,
+    event: &Event,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     inst.record_activity_start("data_activity");
     let counter = inst.activity_counter.clone();
     let ctx_clone = ctx.clone();
-    
+
     // Access event data
     let work_amount = if let Some(amount) = event.get_data::<i32>() {
         *amount
     } else {
         10 // default
     };
-    
+
     Box::pin(async move {
         // Simulate work proportional to data
         for _i in 0..work_amount {
@@ -161,7 +184,7 @@ fn data_activity(ctx: &Context, inst: &mut ActivityTestInstance, event: &Event) 
             }
             tokio::time::sleep(Duration::from_millis(5)).await;
         }
-        
+
         counter.fetch_sub(1, Ordering::Relaxed);
     })
 }
@@ -171,9 +194,11 @@ async fn test_single_activity_execution() -> Result<()> {
     let instance = ActivityTestInstance::new();
     let ctx = Context::new();
 
-    let model = define!("SingleActivityTest",
+    let model = define!(
+        "SingleActivityTest",
         initial!(target!("working")),
-        state!("working",
+        state!(
+            "working",
             activity!(quick_activity),
             transition!(on!("done"), target!("finished"))
         ),
@@ -190,7 +215,10 @@ async fn test_single_activity_execution() -> Result<()> {
     tokio::time::sleep(Duration::from_millis(50)).await;
 
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<ActivityTestInstance>().unwrap();
+    let inst = instance
+        .as_any()
+        .downcast_ref::<ActivityTestInstance>()
+        .unwrap();
     assert_eq!(inst.activity_starts.len(), 1);
     assert_eq!(inst.activity_starts[0], "quick");
     assert_eq!(inst.get_active_count(), 0);
@@ -208,23 +236,37 @@ async fn test_multiple_concurrent_activities() -> Result<()> {
     let instance = ActivityTestInstance::new();
     let ctx = Context::new();
 
-    fn multi_activity1(ctx: &Context, inst: &mut ActivityTestInstance, event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn multi_activity1(
+        ctx: &Context,
+        inst: &mut ActivityTestInstance,
+        event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         quick_activity(ctx, inst, event)
     }
 
-    fn multi_activity2(ctx: &Context, inst: &mut ActivityTestInstance, event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn multi_activity2(
+        ctx: &Context,
+        inst: &mut ActivityTestInstance,
+        event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         medium_activity(ctx, inst, event)
     }
 
-    fn multi_activity3(ctx: &Context, inst: &mut ActivityTestInstance, event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn multi_activity3(
+        ctx: &Context,
+        inst: &mut ActivityTestInstance,
+        event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         network_activity(ctx, inst, event)
     }
 
-    let model = define!("MultipleActivityTest",
+    let model = define!(
+        "MultipleActivityTest",
         initial!(target!("busy")),
-        state!("busy",
+        state!(
+            "busy",
             activity!(multi_activity1),
-            activity!(multi_activity2), 
+            activity!(multi_activity2),
             activity!(multi_activity3),
             transition!(on!("stop"), target!("idle"))
         ),
@@ -242,7 +284,10 @@ async fn test_multiple_concurrent_activities() -> Result<()> {
 
     // All three activities should have started
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<ActivityTestInstance>().unwrap();
+    let inst = instance
+        .as_any()
+        .downcast_ref::<ActivityTestInstance>()
+        .unwrap();
     assert_eq!(inst.activity_starts.len(), 3);
     assert_eq!(inst.get_active_count(), 3);
     drop(instance);
@@ -252,7 +297,10 @@ async fn test_multiple_concurrent_activities() -> Result<()> {
 
     // All activities should eventually complete
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<ActivityTestInstance>().unwrap();
+    let inst = instance
+        .as_any()
+        .downcast_ref::<ActivityTestInstance>()
+        .unwrap();
     assert_eq!(inst.get_active_count(), 0);
 
     Ok(())
@@ -263,17 +311,27 @@ async fn test_activity_cancellation_on_state_exit() -> Result<()> {
     let instance = ActivityTestInstance::new();
     let ctx = Context::new();
 
-    fn long_activity1(ctx: &Context, inst: &mut ActivityTestInstance, event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn long_activity1(
+        ctx: &Context,
+        inst: &mut ActivityTestInstance,
+        event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         long_activity(ctx, inst, event)
     }
 
-    fn monitoring_activity1(ctx: &Context, inst: &mut ActivityTestInstance, event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn monitoring_activity1(
+        ctx: &Context,
+        inst: &mut ActivityTestInstance,
+        event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         monitoring_activity(ctx, inst, event)
     }
 
-    let model = define!("ActivityCancellationTest",
+    let model = define!(
+        "ActivityCancellationTest",
         initial!(target!("running")),
-        state!("running",
+        state!(
+            "running",
             activity!(long_activity1),
             activity!(monitoring_activity1),
             transition!(on!("interrupt"), target!("stopped"))
@@ -291,7 +349,10 @@ async fn test_activity_cancellation_on_state_exit() -> Result<()> {
     tokio::time::sleep(Duration::from_millis(50)).await;
 
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<ActivityTestInstance>().unwrap();
+    let inst = instance
+        .as_any()
+        .downcast_ref::<ActivityTestInstance>()
+        .unwrap();
     assert_eq!(inst.activity_starts.len(), 2);
     assert_eq!(inst.get_active_count(), 2);
     drop(instance);
@@ -306,7 +367,10 @@ async fn test_activity_cancellation_on_state_exit() -> Result<()> {
 
     // Activities should have been cancelled
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<ActivityTestInstance>().unwrap();
+    let inst = instance
+        .as_any()
+        .downcast_ref::<ActivityTestInstance>()
+        .unwrap();
     assert_eq!(inst.get_active_count(), 0);
 
     Ok(())
@@ -317,12 +381,12 @@ async fn test_activity_with_event_data_access() -> Result<()> {
     let instance = ActivityTestInstance::new();
     let ctx = Context::new();
 
-    let model = define!("ActivityDataTest",
+    let model = define!(
+        "ActivityDataTest",
         initial!(target!("start")),
-        state!("start",
-            transition!(on!("work"), target!("processing"))
-        ),
-        state!("processing",
+        state!("start", transition!(on!("work"), target!("processing"))),
+        state!(
+            "processing",
             activity!(data_activity),
             transition!(on!("done"), target!("finished"))
         ),
@@ -341,7 +405,10 @@ async fn test_activity_with_event_data_access() -> Result<()> {
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<ActivityTestInstance>().unwrap();
+    let inst = instance
+        .as_any()
+        .downcast_ref::<ActivityTestInstance>()
+        .unwrap();
     assert_eq!(inst.activity_starts.len(), 1);
     assert_eq!(inst.activity_starts[0], "data_activity");
     assert_eq!(inst.get_active_count(), 0);
@@ -354,11 +421,15 @@ async fn test_activities_in_hierarchical_states() -> Result<()> {
     let instance = ActivityTestInstance::new();
     let ctx = Context::new();
 
-    fn parent_monitoring(ctx: &Context, inst: &mut ActivityTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn parent_monitoring(
+        ctx: &Context,
+        inst: &mut ActivityTestInstance,
+        _event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         inst.record_activity_start("parent-monitoring");
         let counter = inst.activity_counter.clone();
         let ctx_clone = ctx.clone();
-        
+
         Box::pin(async move {
             while !ctx_clone.is_cancelled() {
                 tokio::time::sleep(Duration::from_millis(30)).await;
@@ -367,26 +438,35 @@ async fn test_activities_in_hierarchical_states() -> Result<()> {
         })
     }
 
-    fn child_quick(ctx: &Context, inst: &mut ActivityTestInstance, event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn child_quick(
+        ctx: &Context,
+        inst: &mut ActivityTestInstance,
+        event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         quick_activity(ctx, inst, event)
     }
 
-    fn sibling_medium(ctx: &Context, inst: &mut ActivityTestInstance, event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn sibling_medium(
+        ctx: &Context,
+        inst: &mut ActivityTestInstance,
+        event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         medium_activity(ctx, inst, event)
     }
 
-    let model = define!("HierarchicalActivityTest",
+    let model = define!(
+        "HierarchicalActivityTest",
         initial!(target!("parent")),
-        state!("parent",
+        state!(
+            "parent",
             activity!(parent_monitoring),
             initial!(target!("child")),
-            state!("child",
+            state!(
+                "child",
                 activity!(child_quick),
                 transition!(on!("switch"), target!("../sibling"))
             ),
-            state!("sibling",
-                activity!(sibling_medium)
-            ),
+            state!("sibling", activity!(sibling_medium)),
             transition!(on!("exit"), target!("../other"))
         ),
         state!("other")
@@ -402,7 +482,10 @@ async fn test_activities_in_hierarchical_states() -> Result<()> {
     tokio::time::sleep(Duration::from_millis(5)).await;
 
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<ActivityTestInstance>().unwrap();
+    let inst = instance
+        .as_any()
+        .downcast_ref::<ActivityTestInstance>()
+        .unwrap();
     assert_eq!(inst.activity_starts.len(), 2);
     // Quick activity might already be done, so check >= 1
     assert!(inst.get_active_count() >= 1);
@@ -418,7 +501,10 @@ async fn test_activities_in_hierarchical_states() -> Result<()> {
 
     // Should have 3 activities started (monitoring, quick, medium)
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<ActivityTestInstance>().unwrap();
+    let inst = instance
+        .as_any()
+        .downcast_ref::<ActivityTestInstance>()
+        .unwrap();
     assert_eq!(inst.activity_starts.len(), 3);
     drop(instance);
 
@@ -431,7 +517,10 @@ async fn test_activities_in_hierarchical_states() -> Result<()> {
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<ActivityTestInstance>().unwrap();
+    let inst = instance
+        .as_any()
+        .downcast_ref::<ActivityTestInstance>()
+        .unwrap();
     assert_eq!(inst.get_active_count(), 0);
 
     Ok(())
@@ -445,34 +534,44 @@ async fn test_activity_error_handling_and_cleanup() -> Result<()> {
     // Global flag to control error behavior
     static SHOULD_ERROR: AtomicBool = AtomicBool::new(false);
 
-    fn error_prone_activity(ctx: &Context, inst: &mut ActivityTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn error_prone_activity(
+        ctx: &Context,
+        inst: &mut ActivityTestInstance,
+        _event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         inst.record_activity_start("error_prone");
         let counter = inst.activity_counter.clone();
         let ctx_clone = ctx.clone();
-        
+
         Box::pin(async move {
             // Simulate some work
             tokio::time::sleep(Duration::from_millis(30)).await;
-            
+
             if SHOULD_ERROR.load(Ordering::Relaxed) && !ctx_clone.is_cancelled() {
                 // In real implementation, this might dispatch an error event
                 counter.fetch_sub(1, Ordering::Relaxed);
                 return;
             }
-            
+
             if !ctx_clone.is_cancelled() {
                 counter.fetch_sub(1, Ordering::Relaxed);
             }
         })
     }
 
-    fn quick_activity2(ctx: &Context, inst: &mut ActivityTestInstance, event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn quick_activity2(
+        ctx: &Context,
+        inst: &mut ActivityTestInstance,
+        event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         quick_activity(ctx, inst, event)
     }
 
-    let model = define!("ActivityErrorTest",
+    let model = define!(
+        "ActivityErrorTest",
         initial!(target!("working")),
-        state!("working",
+        state!(
+            "working",
             activity!(error_prone_activity),
             activity!(quick_activity2),
             transition!(on!("retry"), target!(".")),
@@ -488,7 +587,10 @@ async fn test_activity_error_handling_and_cleanup() -> Result<()> {
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<ActivityTestInstance>().unwrap();
+    let inst = instance
+        .as_any()
+        .downcast_ref::<ActivityTestInstance>()
+        .unwrap();
     assert_eq!(inst.activity_starts.len(), 2);
     assert_eq!(inst.get_active_count(), 0);
     drop(instance);
@@ -503,7 +605,10 @@ async fn test_activity_error_handling_and_cleanup() -> Result<()> {
 
     // Should have more activity starts
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<ActivityTestInstance>().unwrap();
+    let inst = instance
+        .as_any()
+        .downcast_ref::<ActivityTestInstance>()
+        .unwrap();
     assert_eq!(inst.activity_starts.len(), 4); // 2 more starts
 
     Ok(())

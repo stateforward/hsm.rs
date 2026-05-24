@@ -1,11 +1,10 @@
+use rust::*;
 /**
  * @fileoverview Test entry and exit function execution
  * Tests single and multiple entry/exit actions, execution order, and behavior during transitions
  */
-
 use std::future::Future;
 use std::pin::Pin;
-use rust::*;
 
 #[derive(Debug)]
 pub struct EntryExitTestInstance {
@@ -47,62 +46,102 @@ impl Instance for EntryExitTestInstance {
 }
 
 // Single entry/exit functions
-fn single_entry(_ctx: &Context, inst: &mut EntryExitTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn single_entry(
+    _ctx: &Context,
+    inst: &mut EntryExitTestInstance,
+    _event: &Event,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     inst.increment();
     inst.log_action(&format!("single-entry-{}", inst.counter));
     Box::pin(async move {})
 }
 
-fn single_exit(_ctx: &Context, inst: &mut EntryExitTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn single_exit(
+    _ctx: &Context,
+    inst: &mut EntryExitTestInstance,
+    _event: &Event,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     inst.log_action(&format!("single-exit-{}", inst.counter));
     inst.counter = 0;
     Box::pin(async move {})
 }
 
 // Multiple entry functions
-fn setup_state(_ctx: &Context, inst: &mut EntryExitTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn setup_state(
+    _ctx: &Context,
+    inst: &mut EntryExitTestInstance,
+    _event: &Event,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     inst.set_data("status", "initializing");
     inst.log_action("setup-state");
     Box::pin(async move {})
 }
 
-fn log_entry(_ctx: &Context, inst: &mut EntryExitTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn log_entry(
+    _ctx: &Context,
+    inst: &mut EntryExitTestInstance,
+    _event: &Event,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     inst.increment();
     inst.log_action("log-entry");
     Box::pin(async move {})
 }
 
-fn initialize_counters(_ctx: &Context, inst: &mut EntryExitTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn initialize_counters(
+    _ctx: &Context,
+    inst: &mut EntryExitTestInstance,
+    _event: &Event,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     inst.increment();
     inst.log_action("initialize-counters");
     Box::pin(async move {})
 }
 
-fn finalize_setup(_ctx: &Context, inst: &mut EntryExitTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn finalize_setup(
+    _ctx: &Context,
+    inst: &mut EntryExitTestInstance,
+    _event: &Event,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     inst.set_data("status", "ready");
     inst.log_action("finalize-setup");
     Box::pin(async move {})
 }
 
 // Multiple exit functions
-fn save_data(_ctx: &Context, inst: &mut EntryExitTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn save_data(
+    _ctx: &Context,
+    inst: &mut EntryExitTestInstance,
+    _event: &Event,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     inst.set_data("saved", "true");
     inst.log_action("save-data");
     Box::pin(async move {})
 }
 
-fn cleanup_resources(_ctx: &Context, inst: &mut EntryExitTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn cleanup_resources(
+    _ctx: &Context,
+    inst: &mut EntryExitTestInstance,
+    _event: &Event,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     inst.set_data("cleaned", "true");
     inst.log_action("cleanup-resources");
     Box::pin(async move {})
 }
 
-fn log_exit(_ctx: &Context, inst: &mut EntryExitTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn log_exit(
+    _ctx: &Context,
+    inst: &mut EntryExitTestInstance,
+    _event: &Event,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     inst.log_action(&format!("log-exit-{}", inst.counter));
     Box::pin(async move {})
 }
 
-fn reset_state(_ctx: &Context, inst: &mut EntryExitTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn reset_state(
+    _ctx: &Context,
+    inst: &mut EntryExitTestInstance,
+    _event: &Event,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     inst.counter = 0;
     inst.set_data("status", "idle");
     inst.log_action("reset-state");
@@ -114,9 +153,11 @@ async fn test_single_entry_exit_functions() -> Result<()> {
     let instance = EntryExitTestInstance::new();
     let ctx = Context::new();
 
-    let model = define!("SingleEntryExitMachine",
+    let model = define!(
+        "SingleEntryExitMachine",
         initial!(target!("active")),
-        state!("active",
+        state!(
+            "active",
             entry!(single_entry),
             exit!(single_exit),
             transition!(on!("next"), target!("../finished"))
@@ -129,7 +170,10 @@ async fn test_single_entry_exit_functions() -> Result<()> {
 
     // Should execute entry action
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<EntryExitTestInstance>().unwrap();
+    let inst = instance
+        .as_any()
+        .downcast_ref::<EntryExitTestInstance>()
+        .unwrap();
     assert_eq!(inst.log, vec!["single-entry-1"]);
     assert_eq!(inst.counter, 1);
     drop(instance);
@@ -139,11 +183,11 @@ async fn test_single_entry_exit_functions() -> Result<()> {
     hsm.dispatch(&ctx, next_event).await;
 
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<EntryExitTestInstance>().unwrap();
-    assert_eq!(inst.log, vec![
-        "single-entry-1",
-        "single-exit-1"
-    ]);
+    let inst = instance
+        .as_any()
+        .downcast_ref::<EntryExitTestInstance>()
+        .unwrap();
+    assert_eq!(inst.log, vec!["single-entry-1", "single-exit-1"]);
     assert_eq!(inst.counter, 0); // Reset by exit action
     assert_eq!(hsm.state(), "/SingleEntryExitMachine/finished");
 
@@ -157,23 +201,25 @@ async fn test_multiple_entry_functions() -> Result<()> {
 
     // Note: Multiple functions would need to be implemented in the actual API
     // For now, we'll test the concept with sequential calls
-    let model = define!("MultipleEntryMachine",
+    let model = define!(
+        "MultipleEntryMachine",
         initial!(target!("configuring")),
-        state!("configuring",
+        state!(
+            "configuring",
             entry!(setup_state),
             transition!(on!("configure"), target!("../ready"))
         ),
-        state!("ready",
+        state!(
+            "ready",
             entry!(log_entry),
             transition!(on!("next"), target!("../processing"))
         ),
-        state!("processing",
+        state!(
+            "processing",
             entry!(initialize_counters),
             transition!(on!("done"), target!("../finished"))
         ),
-        state!("finished",
-            entry!(finalize_setup)
-        )
+        state!("finished", entry!(finalize_setup))
     );
 
     let hsm = start(&ctx, instance, model)?;
@@ -181,7 +227,10 @@ async fn test_multiple_entry_functions() -> Result<()> {
 
     // Should execute first entry action
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<EntryExitTestInstance>().unwrap();
+    let inst = instance
+        .as_any()
+        .downcast_ref::<EntryExitTestInstance>()
+        .unwrap();
     assert_eq!(inst.log, vec!["setup-state"]);
     assert_eq!(inst.data.get("status"), Some(&"initializing".to_string()));
     drop(instance);
@@ -191,7 +240,10 @@ async fn test_multiple_entry_functions() -> Result<()> {
     hsm.dispatch(&ctx, configure_event).await;
 
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<EntryExitTestInstance>().unwrap();
+    let inst = instance
+        .as_any()
+        .downcast_ref::<EntryExitTestInstance>()
+        .unwrap();
     assert_eq!(inst.log, vec!["setup-state", "log-entry"]);
     assert_eq!(inst.counter, 1);
     drop(instance);
@@ -200,8 +252,14 @@ async fn test_multiple_entry_functions() -> Result<()> {
     hsm.dispatch(&ctx, next_event).await;
 
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<EntryExitTestInstance>().unwrap();
-    assert_eq!(inst.log, vec!["setup-state", "log-entry", "initialize-counters"]);
+    let inst = instance
+        .as_any()
+        .downcast_ref::<EntryExitTestInstance>()
+        .unwrap();
+    assert_eq!(
+        inst.log,
+        vec!["setup-state", "log-entry", "initialize-counters"]
+    );
     assert_eq!(inst.counter, 2);
     drop(instance);
 
@@ -209,10 +267,19 @@ async fn test_multiple_entry_functions() -> Result<()> {
     hsm.dispatch(&ctx, done_event).await;
 
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<EntryExitTestInstance>().unwrap();
-    assert_eq!(inst.log, vec![
-        "setup-state", "log-entry", "initialize-counters", "finalize-setup"
-    ]);
+    let inst = instance
+        .as_any()
+        .downcast_ref::<EntryExitTestInstance>()
+        .unwrap();
+    assert_eq!(
+        inst.log,
+        vec![
+            "setup-state",
+            "log-entry",
+            "initialize-counters",
+            "finalize-setup"
+        ]
+    );
     assert_eq!(inst.data.get("status"), Some(&"ready".to_string()));
 
     Ok(())
@@ -224,26 +291,28 @@ async fn test_multiple_exit_functions() -> Result<()> {
     let ctx = Context::new();
 
     // Test multiple exit actions in sequence
-    let model = define!("MultipleExitMachine",
+    let model = define!(
+        "MultipleExitMachine",
         initial!(target!("working")),
-        state!("working",
+        state!(
+            "working",
             entry!(setup_state),
             exit!(save_data),
             transition!(on!("next"), target!("../cleanup"))
         ),
-        state!("cleanup",
+        state!(
+            "cleanup",
             entry!(log_entry),
             exit!(cleanup_resources),
             transition!(on!("next"), target!("../logging"))
         ),
-        state!("logging",
+        state!(
+            "logging",
             entry!(initialize_counters),
             exit!(log_exit),
             transition!(on!("next"), target!("../finished"))
         ),
-        state!("finished",
-            entry!(reset_state)
-        )
+        state!("finished", entry!(reset_state))
     );
 
     let hsm = start(&ctx, instance, model)?;
@@ -254,7 +323,10 @@ async fn test_multiple_exit_functions() -> Result<()> {
     hsm.dispatch(&ctx, next1_event).await;
 
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<EntryExitTestInstance>().unwrap();
+    let inst = instance
+        .as_any()
+        .downcast_ref::<EntryExitTestInstance>()
+        .unwrap();
     assert_eq!(inst.data.get("saved"), Some(&"true".to_string()));
     assert!(inst.log.contains(&"save-data".to_string()));
     assert!(inst.log.contains(&"log-entry".to_string()));
@@ -264,7 +336,10 @@ async fn test_multiple_exit_functions() -> Result<()> {
     hsm.dispatch(&ctx, next2_event).await;
 
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<EntryExitTestInstance>().unwrap();
+    let inst = instance
+        .as_any()
+        .downcast_ref::<EntryExitTestInstance>()
+        .unwrap();
     assert_eq!(inst.data.get("cleaned"), Some(&"true".to_string()));
     assert!(inst.log.contains(&"cleanup-resources".to_string()));
     assert!(inst.log.contains(&"initialize-counters".to_string()));
@@ -274,7 +349,10 @@ async fn test_multiple_exit_functions() -> Result<()> {
     hsm.dispatch(&ctx, next3_event).await;
 
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<EntryExitTestInstance>().unwrap();
+    let inst = instance
+        .as_any()
+        .downcast_ref::<EntryExitTestInstance>()
+        .unwrap();
     assert!(inst.log.contains(&"log-exit-2".to_string()));
     assert!(inst.log.contains(&"reset-state".to_string()));
     assert_eq!(inst.counter, 0); // Reset by final entry action
@@ -288,7 +366,11 @@ async fn test_entry_exit_with_event_data() -> Result<()> {
     let instance = EntryExitTestInstance::new();
     let ctx = Context::new();
 
-    fn data_entry(_ctx: &Context, inst: &mut EntryExitTestInstance, event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn data_entry(
+        _ctx: &Context,
+        inst: &mut EntryExitTestInstance,
+        event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         if let Some(message) = event.get_data::<String>() {
             inst.log_action(&format!("entry-{}", message));
             inst.set_data("entry_data", message);
@@ -298,7 +380,11 @@ async fn test_entry_exit_with_event_data() -> Result<()> {
         Box::pin(async move {})
     }
 
-    fn data_exit(_ctx: &Context, inst: &mut EntryExitTestInstance, event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn data_exit(
+        _ctx: &Context,
+        inst: &mut EntryExitTestInstance,
+        event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         if let Some(message) = event.get_data::<String>() {
             inst.log_action(&format!("exit-{}", message));
             inst.set_data("exit_data", message);
@@ -308,16 +394,16 @@ async fn test_entry_exit_with_event_data() -> Result<()> {
         Box::pin(async move {})
     }
 
-    let model = define!("EventDataMachine",
+    let model = define!(
+        "EventDataMachine",
         initial!(target!("active")),
-        state!("active",
+        state!(
+            "active",
             entry!(data_entry),
             exit!(data_exit),
             transition!(on!("transition"), target!("../finished"))
         ),
-        state!("finished",
-            entry!(data_entry)
-        )
+        state!("finished", entry!(data_entry))
     );
 
     let hsm = start(&ctx, instance, model)?;
@@ -325,7 +411,10 @@ async fn test_entry_exit_with_event_data() -> Result<()> {
 
     // Check initial entry (with no event data)
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<EntryExitTestInstance>().unwrap();
+    let inst = instance
+        .as_any()
+        .downcast_ref::<EntryExitTestInstance>()
+        .unwrap();
     assert!(inst.log.contains(&"entry-no-data".to_string()));
     drop(instance);
 
@@ -334,7 +423,10 @@ async fn test_entry_exit_with_event_data() -> Result<()> {
     hsm.dispatch(&ctx, transition_event).await;
 
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<EntryExitTestInstance>().unwrap();
+    let inst = instance
+        .as_any()
+        .downcast_ref::<EntryExitTestInstance>()
+        .unwrap();
     assert!(inst.log.contains(&"exit-finishing".to_string()));
     assert!(inst.log.contains(&"entry-finishing".to_string()));
     assert_eq!(inst.data.get("exit_data"), Some(&"finishing".to_string()));
@@ -347,61 +439,91 @@ async fn test_hierarchical_entry_exit_order() -> Result<()> {
     let instance = EntryExitTestInstance::new();
     let ctx = Context::new();
 
-    fn parent_entry(_ctx: &Context, inst: &mut EntryExitTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn parent_entry(
+        _ctx: &Context,
+        inst: &mut EntryExitTestInstance,
+        _event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         inst.log_action("parent-entry");
         Box::pin(async move {})
     }
 
-    fn parent_exit(_ctx: &Context, inst: &mut EntryExitTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn parent_exit(
+        _ctx: &Context,
+        inst: &mut EntryExitTestInstance,
+        _event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         inst.log_action("parent-exit");
         Box::pin(async move {})
     }
 
-    fn child_entry(_ctx: &Context, inst: &mut EntryExitTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn child_entry(
+        _ctx: &Context,
+        inst: &mut EntryExitTestInstance,
+        _event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         inst.log_action("child-entry");
         Box::pin(async move {})
     }
 
-    fn child_exit(_ctx: &Context, inst: &mut EntryExitTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn child_exit(
+        _ctx: &Context,
+        inst: &mut EntryExitTestInstance,
+        _event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         inst.log_action("child-exit");
         Box::pin(async move {})
     }
 
-    fn grandchild_entry(_ctx: &Context, inst: &mut EntryExitTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn grandchild_entry(
+        _ctx: &Context,
+        inst: &mut EntryExitTestInstance,
+        _event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         inst.log_action("grandchild-entry");
         Box::pin(async move {})
     }
 
-    fn grandchild_exit(_ctx: &Context, inst: &mut EntryExitTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn grandchild_exit(
+        _ctx: &Context,
+        inst: &mut EntryExitTestInstance,
+        _event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         inst.log_action("grandchild-exit");
         Box::pin(async move {})
     }
 
-    fn other_entry(_ctx: &Context, inst: &mut EntryExitTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn other_entry(
+        _ctx: &Context,
+        inst: &mut EntryExitTestInstance,
+        _event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         inst.log_action("other-entry");
         Box::pin(async move {})
     }
 
-    let model = define!("HierarchicalEntryExitMachine",
+    let model = define!(
+        "HierarchicalEntryExitMachine",
         initial!(target!("parent")),
-        state!("parent",
+        state!(
+            "parent",
             initial!(target!("child")),
             entry!(parent_entry),
             exit!(parent_exit),
-            state!("child",
+            state!(
+                "child",
                 initial!(target!("grandchild")),
                 entry!(child_entry),
                 exit!(child_exit),
-                state!("grandchild",
+                state!(
+                    "grandchild",
                     entry!(grandchild_entry),
                     exit!(grandchild_exit),
                     transition!(on!("exit"), target!("../../../other"))
                 )
             )
         ),
-        state!("other",
-            entry!(other_entry)
-        )
+        state!("other", entry!(other_entry))
     );
 
     let hsm = start(&ctx, instance, model)?;
@@ -409,12 +531,14 @@ async fn test_hierarchical_entry_exit_order() -> Result<()> {
 
     // Should enter in hierarchical order: parent -> child -> grandchild
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<EntryExitTestInstance>().unwrap();
-    assert_eq!(inst.log, vec![
-        "parent-entry",
-        "child-entry",
-        "grandchild-entry"
-    ]);
+    let inst = instance
+        .as_any()
+        .downcast_ref::<EntryExitTestInstance>()
+        .unwrap();
+    assert_eq!(
+        inst.log,
+        vec!["parent-entry", "child-entry", "grandchild-entry"]
+    );
     drop(instance);
 
     // Exit should be in reverse order: grandchild -> child -> parent
@@ -422,12 +546,22 @@ async fn test_hierarchical_entry_exit_order() -> Result<()> {
     hsm.dispatch(&ctx, exit_event).await;
 
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<EntryExitTestInstance>().unwrap();
-    assert_eq!(inst.log, vec![
-        "parent-entry", "child-entry", "grandchild-entry",
-        "grandchild-exit", "child-exit", "parent-exit",
-        "other-entry"
-    ]);
+    let inst = instance
+        .as_any()
+        .downcast_ref::<EntryExitTestInstance>()
+        .unwrap();
+    assert_eq!(
+        inst.log,
+        vec![
+            "parent-entry",
+            "child-entry",
+            "grandchild-entry",
+            "grandchild-exit",
+            "child-exit",
+            "parent-exit",
+            "other-entry"
+        ]
+    );
 
     Ok(())
 }
@@ -437,9 +571,11 @@ async fn test_entry_exit_with_self_transitions() -> Result<()> {
     let instance = EntryExitTestInstance::new();
     let ctx = Context::new();
 
-    let model = define!("SelfTransitionEntryExitMachine",
+    let model = define!(
+        "SelfTransitionEntryExitMachine",
         initial!(target!("counter")),
-        state!("counter",
+        state!(
+            "counter",
             entry!(single_entry),
             exit!(single_exit),
             transition!(on!("self"), target!("."))
@@ -451,7 +587,10 @@ async fn test_entry_exit_with_self_transitions() -> Result<()> {
 
     // Initial entry
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<EntryExitTestInstance>().unwrap();
+    let inst = instance
+        .as_any()
+        .downcast_ref::<EntryExitTestInstance>()
+        .unwrap();
     assert_eq!(inst.log, vec!["single-entry-1"]);
     assert_eq!(inst.counter, 1);
     drop(instance);
@@ -461,12 +600,14 @@ async fn test_entry_exit_with_self_transitions() -> Result<()> {
     hsm.dispatch(&ctx, self_event).await;
 
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<EntryExitTestInstance>().unwrap();
-    assert_eq!(inst.log, vec![
-        "single-entry-1",
-        "single-exit-1",
-        "single-entry-1"
-    ]);
+    let inst = instance
+        .as_any()
+        .downcast_ref::<EntryExitTestInstance>()
+        .unwrap();
+    assert_eq!(
+        inst.log,
+        vec!["single-entry-1", "single-exit-1", "single-entry-1"]
+    );
     assert_eq!(inst.counter, 1); // Reset to 0 by exit, then incremented to 1 by entry
 
     Ok(())
@@ -477,7 +618,11 @@ async fn test_entry_exit_error_handling() -> Result<()> {
     let instance = EntryExitTestInstance::new();
     let ctx = Context::new();
 
-    fn fallible_entry(_ctx: &Context, inst: &mut EntryExitTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn fallible_entry(
+        _ctx: &Context,
+        inst: &mut EntryExitTestInstance,
+        _event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         inst.log_action("fallible-entry");
         Box::pin(async move {
             // In a real implementation, this might handle errors
@@ -485,19 +630,26 @@ async fn test_entry_exit_error_handling() -> Result<()> {
         })
     }
 
-    fn cleanup_entry(_ctx: &Context, inst: &mut EntryExitTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn cleanup_entry(
+        _ctx: &Context,
+        inst: &mut EntryExitTestInstance,
+        _event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         inst.log_action("cleanup-entry");
         Box::pin(async move {})
     }
 
-    let model = define!("ErrorHandlingMachine",
+    let model = define!(
+        "ErrorHandlingMachine",
         initial!(target!("working")),
-        state!("working",
+        state!(
+            "working",
             entry!(fallible_entry),
             exit!(save_data),
             transition!(on!("error"), target!("../error"))
         ),
-        state!("error",
+        state!(
+            "error",
             entry!(cleanup_entry),
             transition!(on!("recover"), target!("../working"))
         )
@@ -507,7 +659,10 @@ async fn test_entry_exit_error_handling() -> Result<()> {
     hsm.start().await;
 
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<EntryExitTestInstance>().unwrap();
+    let inst = instance
+        .as_any()
+        .downcast_ref::<EntryExitTestInstance>()
+        .unwrap();
     assert_eq!(inst.log, vec!["fallible-entry"]);
     drop(instance);
 
@@ -516,12 +671,14 @@ async fn test_entry_exit_error_handling() -> Result<()> {
     hsm.dispatch(&ctx, error_event).await;
 
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<EntryExitTestInstance>().unwrap();
-    assert_eq!(inst.log, vec![
-        "fallible-entry",
-        "save-data",
-        "cleanup-entry"
-    ]);
+    let inst = instance
+        .as_any()
+        .downcast_ref::<EntryExitTestInstance>()
+        .unwrap();
+    assert_eq!(
+        inst.log,
+        vec!["fallible-entry", "save-data", "cleanup-entry"]
+    );
     assert_eq!(inst.data.get("saved"), Some(&"true".to_string()));
 
     Ok(())

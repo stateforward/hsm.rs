@@ -1,11 +1,10 @@
+use rust::*;
 /**
  * @fileoverview Test different types of transitions
  * Tests external, internal, self, and local transitions with proper entry/exit behavior
  */
-
 use std::future::Future;
 use std::pin::Pin;
-use rust::*;
 
 #[derive(Debug)]
 pub struct TransitionTestInstance {
@@ -45,65 +44,113 @@ impl Instance for TransitionTestInstance {
 }
 
 // Entry/Exit functions
-fn state_entry(_ctx: &Context, inst: &mut TransitionTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn state_entry(
+    _ctx: &Context,
+    inst: &mut TransitionTestInstance,
+    _event: &Event,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     inst.increment();
     inst.log_action(&format!("state-entry-{}", inst.counter));
     Box::pin(async move {})
 }
 
-fn state_exit(_ctx: &Context, inst: &mut TransitionTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn state_exit(
+    _ctx: &Context,
+    inst: &mut TransitionTestInstance,
+    _event: &Event,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     inst.log_action(&format!("state-exit-{}", inst.counter));
     inst.reset();
     Box::pin(async move {})
 }
 
-fn parent_entry(_ctx: &Context, inst: &mut TransitionTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn parent_entry(
+    _ctx: &Context,
+    inst: &mut TransitionTestInstance,
+    _event: &Event,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     inst.log_action("parent-entry");
     Box::pin(async move {})
 }
 
-fn parent_exit(_ctx: &Context, inst: &mut TransitionTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn parent_exit(
+    _ctx: &Context,
+    inst: &mut TransitionTestInstance,
+    _event: &Event,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     inst.log_action("parent-exit");
     Box::pin(async move {})
 }
 
-fn child_entry(_ctx: &Context, inst: &mut TransitionTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn child_entry(
+    _ctx: &Context,
+    inst: &mut TransitionTestInstance,
+    _event: &Event,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     inst.log_action("child-entry");
     Box::pin(async move {})
 }
 
-fn child_exit(_ctx: &Context, inst: &mut TransitionTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn child_exit(
+    _ctx: &Context,
+    inst: &mut TransitionTestInstance,
+    _event: &Event,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     inst.log_action("child-exit");
     Box::pin(async move {})
 }
 
-fn sibling_entry(_ctx: &Context, inst: &mut TransitionTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn sibling_entry(
+    _ctx: &Context,
+    inst: &mut TransitionTestInstance,
+    _event: &Event,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     inst.log_action("sibling-entry");
     Box::pin(async move {})
 }
 
-fn sibling_exit(_ctx: &Context, inst: &mut TransitionTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn sibling_exit(
+    _ctx: &Context,
+    inst: &mut TransitionTestInstance,
+    _event: &Event,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     inst.log_action("sibling-exit");
     Box::pin(async move {})
 }
 
 // Effect functions
-fn external_effect(_ctx: &Context, inst: &mut TransitionTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn external_effect(
+    _ctx: &Context,
+    inst: &mut TransitionTestInstance,
+    _event: &Event,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     inst.log_action("external-effect");
     Box::pin(async move {})
 }
 
-fn internal_effect(_ctx: &Context, inst: &mut TransitionTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn internal_effect(
+    _ctx: &Context,
+    inst: &mut TransitionTestInstance,
+    _event: &Event,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     inst.log_action("internal-effect");
     Box::pin(async move {})
 }
 
-fn self_effect(_ctx: &Context, inst: &mut TransitionTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn self_effect(
+    _ctx: &Context,
+    inst: &mut TransitionTestInstance,
+    _event: &Event,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     inst.log_action("self-effect");
     Box::pin(async move {})
 }
 
-fn local_effect(_ctx: &Context, inst: &mut TransitionTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn local_effect(
+    _ctx: &Context,
+    inst: &mut TransitionTestInstance,
+    _event: &Event,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     inst.log_action("local-effect");
     Box::pin(async move {})
 }
@@ -113,14 +160,21 @@ async fn test_external_transitions() -> Result<()> {
     let instance = TransitionTestInstance::new();
     let ctx = Context::new();
 
-    let model = define!("ExternalTransitionMachine",
+    let model = define!(
+        "ExternalTransitionMachine",
         initial!(target!("state1")),
-        state!("state1",
+        state!(
+            "state1",
             entry!(state_entry),
             exit!(state_exit),
-            transition!(on!("external"), target!("../state2"), effect!(external_effect))
+            transition!(
+                on!("external"),
+                target!("../state2"),
+                effect!(external_effect)
+            )
         ),
-        state!("state2",
+        state!(
+            "state2",
             entry!(state_entry),
             exit!(state_exit),
             transition!(on!("back"), target!("../state1"), effect!(external_effect))
@@ -132,7 +186,10 @@ async fn test_external_transitions() -> Result<()> {
 
     // Initial entry
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<TransitionTestInstance>().unwrap();
+    let inst = instance
+        .as_any()
+        .downcast_ref::<TransitionTestInstance>()
+        .unwrap();
     assert_eq!(inst.log, vec!["state-entry-1"]);
     assert_eq!(inst.counter, 1);
     drop(instance);
@@ -142,13 +199,19 @@ async fn test_external_transitions() -> Result<()> {
     hsm.dispatch(&ctx, external_event).await;
 
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<TransitionTestInstance>().unwrap();
-    assert_eq!(inst.log, vec![
-        "state-entry-1",
-        "state-exit-1",
-        "external-effect",
-        "state-entry-1"
-    ]);
+    let inst = instance
+        .as_any()
+        .downcast_ref::<TransitionTestInstance>()
+        .unwrap();
+    assert_eq!(
+        inst.log,
+        vec![
+            "state-entry-1",
+            "state-exit-1",
+            "external-effect",
+            "state-entry-1"
+        ]
+    );
     assert_eq!(hsm.state(), "/ExternalTransitionMachine/state2");
 
     Ok(())
@@ -159,9 +222,11 @@ async fn test_internal_transitions() -> Result<()> {
     let instance = TransitionTestInstance::new();
     let ctx = Context::new();
 
-    let model = define!("InternalTransitionMachine",
+    let model = define!(
+        "InternalTransitionMachine",
         initial!(target!("active")),
-        state!("active",
+        state!(
+            "active",
             entry!(state_entry),
             exit!(state_exit),
             transition!(on!("internal"), effect!(internal_effect))
@@ -173,7 +238,10 @@ async fn test_internal_transitions() -> Result<()> {
 
     // Initial entry
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<TransitionTestInstance>().unwrap();
+    let inst = instance
+        .as_any()
+        .downcast_ref::<TransitionTestInstance>()
+        .unwrap();
     assert_eq!(inst.log, vec!["state-entry-1"]);
     assert_eq!(inst.counter, 1);
     drop(instance);
@@ -183,11 +251,11 @@ async fn test_internal_transitions() -> Result<()> {
     hsm.dispatch(&ctx, internal_event).await;
 
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<TransitionTestInstance>().unwrap();
-    assert_eq!(inst.log, vec![
-        "state-entry-1",
-        "internal-effect"
-    ]);
+    let inst = instance
+        .as_any()
+        .downcast_ref::<TransitionTestInstance>()
+        .unwrap();
+    assert_eq!(inst.log, vec!["state-entry-1", "internal-effect"]);
     assert_eq!(inst.counter, 1); // Should not re-enter
     assert_eq!(hsm.state(), "/InternalTransitionMachine/active");
 
@@ -199,9 +267,11 @@ async fn test_self_transitions() -> Result<()> {
     let instance = TransitionTestInstance::new();
     let ctx = Context::new();
 
-    let model = define!("SelfTransitionMachine",
+    let model = define!(
+        "SelfTransitionMachine",
         initial!(target!("counter")),
-        state!("counter",
+        state!(
+            "counter",
             entry!(state_entry),
             exit!(state_exit),
             transition!(on!("self"), target!("."), effect!(self_effect))
@@ -213,7 +283,10 @@ async fn test_self_transitions() -> Result<()> {
 
     // Initial entry
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<TransitionTestInstance>().unwrap();
+    let inst = instance
+        .as_any()
+        .downcast_ref::<TransitionTestInstance>()
+        .unwrap();
     assert_eq!(inst.log, vec!["state-entry-1"]);
     assert_eq!(inst.counter, 1);
     drop(instance);
@@ -223,13 +296,19 @@ async fn test_self_transitions() -> Result<()> {
     hsm.dispatch(&ctx, self_event).await;
 
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<TransitionTestInstance>().unwrap();
-    assert_eq!(inst.log, vec![
-        "state-entry-1",
-        "state-exit-1",
-        "self-effect",
-        "state-entry-1"
-    ]);
+    let inst = instance
+        .as_any()
+        .downcast_ref::<TransitionTestInstance>()
+        .unwrap();
+    assert_eq!(
+        inst.log,
+        vec![
+            "state-entry-1",
+            "state-exit-1",
+            "self-effect",
+            "state-entry-1"
+        ]
+    );
     assert_eq!(inst.counter, 1); // Reset then incremented again
     assert_eq!(hsm.state(), "/SelfTransitionMachine/counter");
 
@@ -241,21 +320,21 @@ async fn test_local_transitions() -> Result<()> {
     let instance = TransitionTestInstance::new();
     let ctx = Context::new();
 
-    let model = define!("LocalTransitionMachine",
+    let model = define!(
+        "LocalTransitionMachine",
         initial!(target!("parent")),
-        state!("parent",
+        state!(
+            "parent",
             initial!(target!("child")),
             entry!(parent_entry),
             exit!(parent_exit),
-            state!("child",
+            state!(
+                "child",
                 entry!(child_entry),
                 exit!(child_exit),
                 transition!(on!("local"), target!("../sibling"), effect!(local_effect))
             ),
-            state!("sibling",
-                entry!(sibling_entry),
-                exit!(sibling_exit)
-            )
+            state!("sibling", entry!(sibling_entry), exit!(sibling_exit))
         )
     );
 
@@ -264,7 +343,10 @@ async fn test_local_transitions() -> Result<()> {
 
     // Initial entries
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<TransitionTestInstance>().unwrap();
+    let inst = instance
+        .as_any()
+        .downcast_ref::<TransitionTestInstance>()
+        .unwrap();
     assert_eq!(inst.log, vec!["parent-entry", "child-entry"]);
     drop(instance);
 
@@ -273,13 +355,20 @@ async fn test_local_transitions() -> Result<()> {
     hsm.dispatch(&ctx, local_event).await;
 
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<TransitionTestInstance>().unwrap();
-    assert_eq!(inst.log, vec![
-        "parent-entry", "child-entry",
-        "child-exit",
-        "local-effect",
-        "sibling-entry"
-    ]);
+    let inst = instance
+        .as_any()
+        .downcast_ref::<TransitionTestInstance>()
+        .unwrap();
+    assert_eq!(
+        inst.log,
+        vec![
+            "parent-entry",
+            "child-entry",
+            "child-exit",
+            "local-effect",
+            "sibling-entry"
+        ]
+    );
     assert_eq!(hsm.state(), "/LocalTransitionMachine/parent/sibling");
 
     Ok(())
@@ -290,42 +379,67 @@ async fn test_transition_to_nested_child() -> Result<()> {
     let instance = TransitionTestInstance::new();
     let ctx = Context::new();
 
-    fn outer_entry(_ctx: &Context, inst: &mut TransitionTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn outer_entry(
+        _ctx: &Context,
+        inst: &mut TransitionTestInstance,
+        _event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         inst.log_action("outer-entry");
         Box::pin(async move {})
     }
 
-    fn outer_exit(_ctx: &Context, inst: &mut TransitionTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn outer_exit(
+        _ctx: &Context,
+        inst: &mut TransitionTestInstance,
+        _event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         inst.log_action("outer-exit");
         Box::pin(async move {})
     }
 
-    fn inner_entry(_ctx: &Context, inst: &mut TransitionTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn inner_entry(
+        _ctx: &Context,
+        inst: &mut TransitionTestInstance,
+        _event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         inst.log_action("inner-entry");
         Box::pin(async move {})
     }
 
-    fn deep_entry(_ctx: &Context, inst: &mut TransitionTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn deep_entry(
+        _ctx: &Context,
+        inst: &mut TransitionTestInstance,
+        _event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         inst.log_action("deep-entry");
         Box::pin(async move {})
     }
 
-    fn deep_exit(_ctx: &Context, inst: &mut TransitionTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn deep_exit(
+        _ctx: &Context,
+        inst: &mut TransitionTestInstance,
+        _event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         inst.log_action("deep-exit");
         Box::pin(async move {})
     }
 
-    let model = define!("NestedTransitionMachine",
+    let model = define!(
+        "NestedTransitionMachine",
         initial!(target!("start")),
-        state!("start",
+        state!(
+            "start",
             transition!(on!("dive"), target!("../outer/inner/deep"))
         ),
-        state!("outer",
+        state!(
+            "outer",
             entry!(outer_entry),
             exit!(outer_exit),
-            state!("inner",
+            state!(
+                "inner",
                 entry!(inner_entry),
-                state!("deep",
+                state!(
+                    "deep",
                     entry!(deep_entry),
                     exit!(deep_exit),
                     transition!(on!("surface"), target!("../../../start"))
@@ -342,12 +456,11 @@ async fn test_transition_to_nested_child() -> Result<()> {
     hsm.dispatch(&ctx, dive_event).await;
 
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<TransitionTestInstance>().unwrap();
-    assert_eq!(inst.log, vec![
-        "outer-entry",
-        "inner-entry", 
-        "deep-entry"
-    ]);
+    let inst = instance
+        .as_any()
+        .downcast_ref::<TransitionTestInstance>()
+        .unwrap();
+    assert_eq!(inst.log, vec!["outer-entry", "inner-entry", "deep-entry"]);
     assert_eq!(hsm.state(), "/NestedTransitionMachine/outer/inner/deep");
     drop(instance);
 
@@ -356,11 +469,20 @@ async fn test_transition_to_nested_child() -> Result<()> {
     hsm.dispatch(&ctx, surface_event).await;
 
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<TransitionTestInstance>().unwrap();
-    assert_eq!(inst.log, vec![
-        "outer-entry", "inner-entry", "deep-entry",
-        "deep-exit", "outer-exit"
-    ]);
+    let inst = instance
+        .as_any()
+        .downcast_ref::<TransitionTestInstance>()
+        .unwrap();
+    assert_eq!(
+        inst.log,
+        vec![
+            "outer-entry",
+            "inner-entry",
+            "deep-entry",
+            "deep-exit",
+            "outer-exit"
+        ]
+    );
     assert_eq!(hsm.state(), "/NestedTransitionMachine/start");
 
     Ok(())
@@ -375,13 +497,28 @@ async fn test_transition_types_with_guards() -> Result<()> {
         inst.counter > 3
     }
 
-    let model = define!("GuardedTransitionMachine",
+    let model = define!(
+        "GuardedTransitionMachine",
         initial!(target!("waiting")),
-        state!("waiting",
+        state!(
+            "waiting",
             entry!(state_entry),
-            transition!(on!("try_external"), guard!(counter_guard), target!("../success"), effect!(external_effect)),
-            transition!(on!("try_external"), target!("../failed"), effect!(external_effect)),
-            transition!(on!("try_internal"), guard!(counter_guard), effect!(internal_effect)),
+            transition!(
+                on!("try_external"),
+                guard!(counter_guard),
+                target!("../success"),
+                effect!(external_effect)
+            ),
+            transition!(
+                on!("try_external"),
+                target!("../failed"),
+                effect!(external_effect)
+            ),
+            transition!(
+                on!("try_internal"),
+                guard!(counter_guard),
+                effect!(internal_effect)
+            ),
             transition!(on!("increment"), effect!(state_entry))
         ),
         state!("success"),
@@ -398,13 +535,28 @@ async fn test_transition_types_with_guards() -> Result<()> {
 
     // Create new instance and model for second test
     let instance2 = TransitionTestInstance::new();
-    let model2 = define!("GuardedTransitionMachine2",
+    let model2 = define!(
+        "GuardedTransitionMachine2",
         initial!(target!("waiting")),
-        state!("waiting",
+        state!(
+            "waiting",
             entry!(state_entry),
-            transition!(on!("try_external"), guard!(counter_guard), target!("../success"), effect!(external_effect)),
-            transition!(on!("try_external"), target!("../failed"), effect!(external_effect)),
-            transition!(on!("try_internal"), guard!(counter_guard), effect!(internal_effect)),
+            transition!(
+                on!("try_external"),
+                guard!(counter_guard),
+                target!("../success"),
+                effect!(external_effect)
+            ),
+            transition!(
+                on!("try_external"),
+                target!("../failed"),
+                effect!(external_effect)
+            ),
+            transition!(
+                on!("try_internal"),
+                guard!(counter_guard),
+                effect!(internal_effect)
+            ),
             transition!(on!("increment"), effect!(state_entry))
         ),
         state!("success"),
@@ -431,43 +583,67 @@ async fn test_already_active_ancestor_states() -> Result<()> {
     let instance = TransitionTestInstance::new();
     let ctx = Context::new();
 
-    fn parent1_entry(_ctx: &Context, inst: &mut TransitionTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn parent1_entry(
+        _ctx: &Context,
+        inst: &mut TransitionTestInstance,
+        _event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         inst.log_action("parent1-entry");
         Box::pin(async move {})
     }
 
-    fn parent1_exit(_ctx: &Context, inst: &mut TransitionTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn parent1_exit(
+        _ctx: &Context,
+        inst: &mut TransitionTestInstance,
+        _event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         inst.log_action("parent1-exit");
         Box::pin(async move {})
     }
 
-    fn child1_entry(_ctx: &Context, inst: &mut TransitionTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn child1_entry(
+        _ctx: &Context,
+        inst: &mut TransitionTestInstance,
+        _event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         inst.log_action("child1-entry");
         Box::pin(async move {})
     }
 
-    fn child1_exit(_ctx: &Context, inst: &mut TransitionTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn child1_exit(
+        _ctx: &Context,
+        inst: &mut TransitionTestInstance,
+        _event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         inst.log_action("child1-exit");
         Box::pin(async move {})
     }
 
-    fn child2_entry(_ctx: &Context, inst: &mut TransitionTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn child2_entry(
+        _ctx: &Context,
+        inst: &mut TransitionTestInstance,
+        _event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         inst.log_action("child2-entry");
         Box::pin(async move {})
     }
 
-    let model = define!("AncestorActiveMachine",
+    let model = define!(
+        "AncestorActiveMachine",
         initial!(target!("parent1")),
-        state!("parent1",
+        state!(
+            "parent1",
             initial!(target!("child1")),
             entry!(parent1_entry),
             exit!(parent1_exit),
-            state!("child1",
+            state!(
+                "child1",
                 entry!(child1_entry),
                 exit!(child1_exit),
                 transition!(on!("to_child2"), target!("../child2"))
             ),
-            state!("child2",
+            state!(
+                "child2",
                 entry!(child2_entry),
                 transition!(on!("to_parent1"), target!(".."))
             )
@@ -478,7 +654,10 @@ async fn test_already_active_ancestor_states() -> Result<()> {
     hsm.start().await;
 
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<TransitionTestInstance>().unwrap();
+    let inst = instance
+        .as_any()
+        .downcast_ref::<TransitionTestInstance>()
+        .unwrap();
     assert_eq!(inst.log, vec!["parent1-entry", "child1-entry"]);
     drop(instance);
 
@@ -487,11 +666,19 @@ async fn test_already_active_ancestor_states() -> Result<()> {
     hsm.dispatch(&ctx, to_child2_event).await;
 
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<TransitionTestInstance>().unwrap();
-    assert_eq!(inst.log, vec![
-        "parent1-entry", "child1-entry",
-        "child1-exit", "child2-entry"
-    ]);
+    let inst = instance
+        .as_any()
+        .downcast_ref::<TransitionTestInstance>()
+        .unwrap();
+    assert_eq!(
+        inst.log,
+        vec![
+            "parent1-entry",
+            "child1-entry",
+            "child1-exit",
+            "child2-entry"
+        ]
+    );
     drop(instance);
 
     // Transition to parent1 from child2 - should exit child2 but NOT re-enter parent1
@@ -499,13 +686,20 @@ async fn test_already_active_ancestor_states() -> Result<()> {
     hsm.dispatch(&ctx, to_parent1_event).await;
 
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<TransitionTestInstance>().unwrap();
+    let inst = instance
+        .as_any()
+        .downcast_ref::<TransitionTestInstance>()
+        .unwrap();
     // Parent1 was already active, so no re-entry
-    assert_eq!(inst.log, vec![
-        "parent1-entry", "child1-entry",
-        "child1-exit", "child2-entry"
-        // No parent1-exit or parent1-entry here
-    ]);
+    assert_eq!(
+        inst.log,
+        vec![
+            "parent1-entry",
+            "child1-entry",
+            "child1-exit",
+            "child2-entry" // No parent1-exit or parent1-entry here
+        ]
+    );
 
     Ok(())
 }

@@ -1,11 +1,10 @@
+use rust::*;
 /**
  * @fileoverview Test choice pseudostates
  * Tests dynamic branching based on runtime conditions using choice pseudostates
  */
-
 use std::future::Future;
 use std::pin::Pin;
-use rust::*;
 
 #[derive(Debug)]
 pub struct ChoiceTestInstance {
@@ -36,11 +35,15 @@ impl ChoiceTestInstance {
     }
 
     pub fn set_direction(&mut self, direction: &str) {
-        self.config.insert("direction".to_string(), direction.to_string());
+        self.config
+            .insert("direction".to_string(), direction.to_string());
     }
 
     pub fn get_direction(&self) -> &str {
-        self.config.get("direction").map(|s| s.as_str()).unwrap_or("")
+        self.config
+            .get("direction")
+            .map(|s| s.as_str())
+            .unwrap_or("")
     }
 }
 
@@ -55,38 +58,66 @@ impl Instance for ChoiceTestInstance {
 }
 
 // Choice transition effects
-fn going_to_choice(_ctx: &Context, inst: &mut ChoiceTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn going_to_choice(
+    _ctx: &Context,
+    inst: &mut ChoiceTestInstance,
+    _event: &Event,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     inst.log_action("going-to-choice");
     Box::pin(async move {})
 }
 
-fn chose_low(_ctx: &Context, inst: &mut ChoiceTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn chose_low(
+    _ctx: &Context,
+    inst: &mut ChoiceTestInstance,
+    _event: &Event,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     inst.log_action("chose-low");
     Box::pin(async move {})
 }
 
-fn chose_medium(_ctx: &Context, inst: &mut ChoiceTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn chose_medium(
+    _ctx: &Context,
+    inst: &mut ChoiceTestInstance,
+    _event: &Event,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     inst.log_action("chose-medium");
     Box::pin(async move {})
 }
 
-fn chose_high(_ctx: &Context, inst: &mut ChoiceTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn chose_high(
+    _ctx: &Context,
+    inst: &mut ChoiceTestInstance,
+    _event: &Event,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     inst.log_action("chose-high");
     Box::pin(async move {})
 }
 
 // Entry actions
-fn low_entry(_ctx: &Context, inst: &mut ChoiceTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn low_entry(
+    _ctx: &Context,
+    inst: &mut ChoiceTestInstance,
+    _event: &Event,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     inst.log_action("low-entry");
     Box::pin(async move {})
 }
 
-fn medium_entry(_ctx: &Context, inst: &mut ChoiceTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn medium_entry(
+    _ctx: &Context,
+    inst: &mut ChoiceTestInstance,
+    _event: &Event,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     inst.log_action("medium-entry");
     Box::pin(async move {})
 }
 
-fn high_entry(_ctx: &Context, inst: &mut ChoiceTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+fn high_entry(
+    _ctx: &Context,
+    inst: &mut ChoiceTestInstance,
+    _event: &Event,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     inst.log_action("high-entry");
     Box::pin(async move {})
 }
@@ -115,14 +146,29 @@ async fn test_basic_choice_pseudostate_with_guards() -> Result<()> {
     instance.set_value(5);
     let ctx = Context::new();
 
-    let model = define!("BasicChoiceMachine",
+    let model = define!(
+        "BasicChoiceMachine",
         initial!(target!("start")),
-        state!("start",
-            transition!(on!("decide"), target!("../decision"), effect!(going_to_choice))
+        state!(
+            "start",
+            transition!(
+                on!("decide"),
+                target!("../decision"),
+                effect!(going_to_choice)
+            )
         ),
-        choice!("decision",
-            transition!(guard!(value_less_than_3), target!("low"), effect!(chose_low)),
-            transition!(guard!(value_3_to_7), target!("medium"), effect!(chose_medium)),
+        choice!(
+            "decision",
+            transition!(
+                guard!(value_less_than_3),
+                target!("low"),
+                effect!(chose_low)
+            ),
+            transition!(
+                guard!(value_3_to_7),
+                target!("medium"),
+                effect!(chose_medium)
+            ),
             transition!(target!("high"), effect!(chose_high))
         ),
         state!("low", entry!(low_entry)),
@@ -139,12 +185,14 @@ async fn test_basic_choice_pseudostate_with_guards() -> Result<()> {
 
     // Should choose medium branch
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<ChoiceTestInstance>().unwrap();
-    assert_eq!(inst.log, vec![
-        "going-to-choice",
-        "chose-medium",
-        "medium-entry"
-    ]);
+    let inst = instance
+        .as_any()
+        .downcast_ref::<ChoiceTestInstance>()
+        .unwrap();
+    assert_eq!(
+        inst.log,
+        vec!["going-to-choice", "chose-medium", "medium-entry"]
+    );
     assert_eq!(hsm.state(), "/BasicChoiceMachine/medium");
 
     Ok(())
@@ -163,11 +211,21 @@ async fn test_choice_with_different_guard_outcomes() -> Result<()> {
         instance.set_value(value);
         let ctx = Context::new();
 
-        let model = define!("ChoiceTestMachine",
+        let model = define!(
+            "ChoiceTestMachine",
             initial!(target!("choice")),
-            choice!("choice",
-                transition!(guard!(value_less_than_3), target!("low"), effect!(chose_low)),
-                transition!(guard!(value_3_to_7), target!("medium"), effect!(chose_medium)),
+            choice!(
+                "choice",
+                transition!(
+                    guard!(value_less_than_3),
+                    target!("low"),
+                    effect!(chose_low)
+                ),
+                transition!(
+                    guard!(value_3_to_7),
+                    target!("medium"),
+                    effect!(chose_medium)
+                ),
                 transition!(target!("high"), effect!(chose_high))
             ),
             state!("low"),
@@ -179,7 +237,10 @@ async fn test_choice_with_different_guard_outcomes() -> Result<()> {
         hsm.start().await;
 
         let instance = hsm.instance().read().unwrap();
-        let inst = instance.as_any().downcast_ref::<ChoiceTestInstance>().unwrap();
+        let inst = instance
+            .as_any()
+            .downcast_ref::<ChoiceTestInstance>()
+            .unwrap();
         assert!(inst.log.contains(&expected_effect.to_string()));
         assert_eq!(hsm.state(), expected_state);
     }
@@ -193,43 +254,78 @@ async fn test_choice_in_hierarchical_state() -> Result<()> {
     instance.set_direction("left");
     let ctx = Context::new();
 
-    fn routed_left(_ctx: &Context, inst: &mut ChoiceTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn routed_left(
+        _ctx: &Context,
+        inst: &mut ChoiceTestInstance,
+        _event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         inst.log_action("routed-left");
         Box::pin(async move {})
     }
 
-    fn routed_right(_ctx: &Context, inst: &mut ChoiceTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn routed_right(
+        _ctx: &Context,
+        inst: &mut ChoiceTestInstance,
+        _event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         inst.log_action("routed-right");
         Box::pin(async move {})
     }
 
-    fn routed_center(_ctx: &Context, inst: &mut ChoiceTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn routed_center(
+        _ctx: &Context,
+        inst: &mut ChoiceTestInstance,
+        _event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         inst.log_action("routed-center");
         Box::pin(async move {})
     }
 
-    fn left_entry(_ctx: &Context, inst: &mut ChoiceTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn left_entry(
+        _ctx: &Context,
+        inst: &mut ChoiceTestInstance,
+        _event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         inst.log_action("left-entry");
         Box::pin(async move {})
     }
 
-    fn right_entry(_ctx: &Context, inst: &mut ChoiceTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn right_entry(
+        _ctx: &Context,
+        inst: &mut ChoiceTestInstance,
+        _event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         inst.log_action("right-entry");
         Box::pin(async move {})
     }
 
-    fn center_entry(_ctx: &Context, inst: &mut ChoiceTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn center_entry(
+        _ctx: &Context,
+        inst: &mut ChoiceTestInstance,
+        _event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         inst.log_action("center-entry");
         Box::pin(async move {})
     }
 
-    let model = define!("HierarchicalChoiceMachine",
+    let model = define!(
+        "HierarchicalChoiceMachine",
         initial!(target!("container")),
-        state!("container",
+        state!(
+            "container",
             initial!(target!("router")),
-            choice!("router",
-                transition!(guard!(direction_left), target!("left"), effect!(routed_left)),
-                transition!(guard!(direction_right), target!("right"), effect!(routed_right)),
+            choice!(
+                "router",
+                transition!(
+                    guard!(direction_left),
+                    target!("left"),
+                    effect!(routed_left)
+                ),
+                transition!(
+                    guard!(direction_right),
+                    target!("right"),
+                    effect!(routed_right)
+                ),
                 transition!(target!("center"), effect!(routed_center))
             ),
             state!("left", entry!(left_entry)),
@@ -242,11 +338,11 @@ async fn test_choice_in_hierarchical_state() -> Result<()> {
     hsm.start().await;
 
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<ChoiceTestInstance>().unwrap();
-    assert_eq!(inst.log, vec![
-        "routed-left",
-        "left-entry"
-    ]);
+    let inst = instance
+        .as_any()
+        .downcast_ref::<ChoiceTestInstance>()
+        .unwrap();
+    assert_eq!(inst.log, vec!["routed-left", "left-entry"]);
     assert_eq!(hsm.state(), "/HierarchicalChoiceMachine/container/left");
 
     Ok(())
@@ -255,18 +351,33 @@ async fn test_choice_in_hierarchical_state() -> Result<()> {
 #[tokio::test]
 async fn test_choice_with_complex_guard_conditions() -> Result<()> {
     let mut instance = ChoiceTestInstance::new();
-    instance.config.insert("enabled".to_string(), "true".to_string());
-    instance.config.insert("priority".to_string(), "2".to_string());
-    instance.config.insert("mode".to_string(), "auto".to_string());
+    instance
+        .config
+        .insert("enabled".to_string(), "true".to_string());
+    instance
+        .config
+        .insert("priority".to_string(), "2".to_string());
+    instance
+        .config
+        .insert("mode".to_string(), "auto".to_string());
     let ctx = Context::new();
 
     fn disabled_guard(_ctx: &Context, inst: &ChoiceTestInstance, _event: &Event) -> bool {
         inst.config.get("enabled").unwrap_or(&"false".to_string()) != "true"
     }
 
-    fn high_priority_manual_guard(_ctx: &Context, inst: &ChoiceTestInstance, _event: &Event) -> bool {
+    fn high_priority_manual_guard(
+        _ctx: &Context,
+        inst: &ChoiceTestInstance,
+        _event: &Event,
+    ) -> bool {
         let enabled = inst.config.get("enabled").unwrap_or(&"false".to_string()) == "true";
-        let priority: i32 = inst.config.get("priority").unwrap_or(&"0".to_string()).parse().unwrap_or(0);
+        let priority: i32 = inst
+            .config
+            .get("priority")
+            .unwrap_or(&"0".to_string())
+            .parse()
+            .unwrap_or(0);
         let mode = inst.config.get("mode").map(|s| s.as_str()).unwrap_or("");
         enabled && priority > 5 && mode == "manual"
     }
@@ -277,32 +388,62 @@ async fn test_choice_with_complex_guard_conditions() -> Result<()> {
         enabled && mode == "auto"
     }
 
-    fn disabled_effect(_ctx: &Context, inst: &mut ChoiceTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn disabled_effect(
+        _ctx: &Context,
+        inst: &mut ChoiceTestInstance,
+        _event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         inst.log_action("disabled-path");
         Box::pin(async move {})
     }
 
-    fn high_priority_effect(_ctx: &Context, inst: &mut ChoiceTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn high_priority_effect(
+        _ctx: &Context,
+        inst: &mut ChoiceTestInstance,
+        _event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         inst.log_action("high-priority-manual");
         Box::pin(async move {})
     }
 
-    fn automatic_effect(_ctx: &Context, inst: &mut ChoiceTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn automatic_effect(
+        _ctx: &Context,
+        inst: &mut ChoiceTestInstance,
+        _event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         inst.log_action("automatic-mode");
         Box::pin(async move {})
     }
 
-    fn default_effect(_ctx: &Context, inst: &mut ChoiceTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn default_effect(
+        _ctx: &Context,
+        inst: &mut ChoiceTestInstance,
+        _event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         inst.log_action("default-fallback");
         Box::pin(async move {})
     }
 
-    let model = define!("ComplexChoiceMachine",
+    let model = define!(
+        "ComplexChoiceMachine",
         initial!(target!("choice")),
-        choice!("choice",
-            transition!(guard!(disabled_guard), target!("disabled"), effect!(disabled_effect)),
-            transition!(guard!(high_priority_manual_guard), target!("highpriority"), effect!(high_priority_effect)),
-            transition!(guard!(auto_mode_guard), target!("automatic"), effect!(automatic_effect)),
+        choice!(
+            "choice",
+            transition!(
+                guard!(disabled_guard),
+                target!("disabled"),
+                effect!(disabled_effect)
+            ),
+            transition!(
+                guard!(high_priority_manual_guard),
+                target!("highpriority"),
+                effect!(high_priority_effect)
+            ),
+            transition!(
+                guard!(auto_mode_guard),
+                target!("automatic"),
+                effect!(automatic_effect)
+            ),
             transition!(target!("default"), effect!(default_effect))
         ),
         state!("disabled"),
@@ -316,7 +457,10 @@ async fn test_choice_with_complex_guard_conditions() -> Result<()> {
 
     // Should choose automatic mode
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<ChoiceTestInstance>().unwrap();
+    let inst = instance
+        .as_any()
+        .downcast_ref::<ChoiceTestInstance>()
+        .unwrap();
     assert_eq!(inst.log, vec!["automatic-mode"]);
     assert_eq!(hsm.state(), "/ComplexChoiceMachine/automatic");
 
@@ -344,29 +488,49 @@ async fn test_choice_with_event_data_evaluation() -> Result<()> {
         }
     }
 
-    fn urgent_effect(_ctx: &Context, inst: &mut ChoiceTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn urgent_effect(
+        _ctx: &Context,
+        inst: &mut ChoiceTestInstance,
+        _event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         inst.log_action("urgent-processing");
         Box::pin(async move {})
     }
 
-    fn normal_effect(_ctx: &Context, inst: &mut ChoiceTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn normal_effect(
+        _ctx: &Context,
+        inst: &mut ChoiceTestInstance,
+        _event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         inst.log_action("normal-processing");
         Box::pin(async move {})
     }
 
-    fn fallback_effect(_ctx: &Context, inst: &mut ChoiceTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn fallback_effect(
+        _ctx: &Context,
+        inst: &mut ChoiceTestInstance,
+        _event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         inst.log_action("fallback-processing");
         Box::pin(async move {})
     }
 
-    let model = define!("EventChoiceMachine",
+    let model = define!(
+        "EventChoiceMachine",
         initial!(target!("waiting")),
-        state!("waiting",
-            transition!(on!("process"), target!("../router"))
-        ),
-        choice!("router",
-            transition!(guard!(urgent_guard), target!("urgent"), effect!(urgent_effect)),
-            transition!(guard!(normal_guard), target!("normal"), effect!(normal_effect)),
+        state!("waiting", transition!(on!("process"), target!("../router"))),
+        choice!(
+            "router",
+            transition!(
+                guard!(urgent_guard),
+                target!("urgent"),
+                effect!(urgent_effect)
+            ),
+            transition!(
+                guard!(normal_guard),
+                target!("normal"),
+                effect!(normal_effect)
+            ),
             transition!(target!("fallback"), effect!(fallback_effect))
         ),
         state!("urgent"),
@@ -382,7 +546,10 @@ async fn test_choice_with_event_data_evaluation() -> Result<()> {
     hsm.dispatch(&ctx, process_event).await;
 
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<ChoiceTestInstance>().unwrap();
+    let inst = instance
+        .as_any()
+        .downcast_ref::<ChoiceTestInstance>()
+        .unwrap();
     assert_eq!(inst.log, vec!["urgent-processing"]);
     assert_eq!(hsm.state(), "/EventChoiceMachine/urgent");
 
@@ -393,7 +560,9 @@ async fn test_choice_with_event_data_evaluation() -> Result<()> {
 async fn test_nested_choice_pseudostates() -> Result<()> {
     let mut instance = ChoiceTestInstance::new();
     instance.data.insert("level1".to_string(), 1); // true
-    instance.config.insert("level2".to_string(), "b".to_string());
+    instance
+        .config
+        .insert("level2".to_string(), "b".to_string());
     let ctx = Context::new();
 
     fn level1_guard(_ctx: &Context, inst: &ChoiceTestInstance, _event: &Event) -> bool {
@@ -408,40 +577,75 @@ async fn test_nested_choice_pseudostates() -> Result<()> {
         inst.config.get("level2").unwrap_or(&"".to_string()) == "b"
     }
 
-    fn level1_true_effect(_ctx: &Context, inst: &mut ChoiceTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn level1_true_effect(
+        _ctx: &Context,
+        inst: &mut ChoiceTestInstance,
+        _event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         inst.log_action("level1-true");
         Box::pin(async move {})
     }
 
-    fn level1_false_effect(_ctx: &Context, inst: &mut ChoiceTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn level1_false_effect(
+        _ctx: &Context,
+        inst: &mut ChoiceTestInstance,
+        _event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         inst.log_action("level1-false");
         Box::pin(async move {})
     }
 
-    fn level2_a_effect(_ctx: &Context, inst: &mut ChoiceTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn level2_a_effect(
+        _ctx: &Context,
+        inst: &mut ChoiceTestInstance,
+        _event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         inst.log_action("level2-a");
         Box::pin(async move {})
     }
 
-    fn level2_b_effect(_ctx: &Context, inst: &mut ChoiceTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn level2_b_effect(
+        _ctx: &Context,
+        inst: &mut ChoiceTestInstance,
+        _event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         inst.log_action("level2-b");
         Box::pin(async move {})
     }
 
-    fn level2_other_effect(_ctx: &Context, inst: &mut ChoiceTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn level2_other_effect(
+        _ctx: &Context,
+        inst: &mut ChoiceTestInstance,
+        _event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         inst.log_action("level2-other");
         Box::pin(async move {})
     }
 
-    let model = define!("NestedChoiceMachine",
+    let model = define!(
+        "NestedChoiceMachine",
         initial!(target!("level1choice")),
-        choice!("level1choice",
-            transition!(guard!(level1_guard), target!("level2choice"), effect!(level1_true_effect)),
+        choice!(
+            "level1choice",
+            transition!(
+                guard!(level1_guard),
+                target!("level2choice"),
+                effect!(level1_true_effect)
+            ),
             transition!(target!("level1false"), effect!(level1_false_effect))
         ),
-        choice!("level2choice",
-            transition!(guard!(level2_a_guard), target!("result_a"), effect!(level2_a_effect)),
-            transition!(guard!(level2_b_guard), target!("result_b"), effect!(level2_b_effect)),
+        choice!(
+            "level2choice",
+            transition!(
+                guard!(level2_a_guard),
+                target!("result_a"),
+                effect!(level2_a_effect)
+            ),
+            transition!(
+                guard!(level2_b_guard),
+                target!("result_b"),
+                effect!(level2_b_effect)
+            ),
             transition!(target!("result_other"), effect!(level2_other_effect))
         ),
         state!("level1false"),
@@ -455,11 +659,11 @@ async fn test_nested_choice_pseudostates() -> Result<()> {
 
     // Should follow level1 choice then level2 choice
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<ChoiceTestInstance>().unwrap();
-    assert_eq!(inst.log, vec![
-        "level1-true",
-        "level2-b"
-    ]);
+    let inst = instance
+        .as_any()
+        .downcast_ref::<ChoiceTestInstance>()
+        .unwrap();
+    assert_eq!(inst.log, vec!["level1-true", "level2-b"]);
     assert_eq!(hsm.state(), "/NestedChoiceMachine/result_b");
 
     Ok(())
@@ -482,14 +686,20 @@ async fn test_choice_with_side_effects_in_guards() -> Result<()> {
         true
     }
 
-    fn path2_effect(_ctx: &Context, inst: &mut ChoiceTestInstance, _event: &Event) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    fn path2_effect(
+        _ctx: &Context,
+        inst: &mut ChoiceTestInstance,
+        _event: &Event,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         inst.log_action("path2-effect");
         Box::pin(async move {})
     }
 
-    let model = define!("SideEffectChoiceMachine",
+    let model = define!(
+        "SideEffectChoiceMachine",
         initial!(target!("choice")),
-        choice!("choice",
+        choice!(
+            "choice",
             transition!(guard!(guard1), target!("path1")),
             transition!(guard!(guard2), target!("path2"), effect!(path2_effect)),
             transition!(guard!(guard3), target!("path3"))
@@ -504,7 +714,10 @@ async fn test_choice_with_side_effects_in_guards() -> Result<()> {
 
     // Should take path2 which has effect
     let instance = hsm.instance().read().unwrap();
-    let inst = instance.as_any().downcast_ref::<ChoiceTestInstance>().unwrap();
+    let inst = instance
+        .as_any()
+        .downcast_ref::<ChoiceTestInstance>()
+        .unwrap();
     assert_eq!(inst.log, vec!["path2-effect"]);
     assert_eq!(hsm.state(), "/SideEffectChoiceMachine/path2");
 

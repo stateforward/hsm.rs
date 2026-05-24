@@ -1,13 +1,12 @@
+use rust::*;
 /**
  * @fileoverview Comprehensive HSM tests for Rust implementation
  * Tests cover all core functionality, edge cases, and error handling
  * Following the CLAUDE.md patterns: (ctx, inst, event) signatures
  */
-
 use std::collections::{HashMap, VecDeque};
 use std::future::Future;
 use std::pin::Pin;
-use rust::*;
 
 // Test instance implementation
 #[derive(Debug)]
@@ -61,11 +60,10 @@ async fn test_basic_state_machine_creation() -> Result<()> {
     let ctx = Context::new();
 
     // Create a simple state machine using the define function
-    let model = define("TestMachine", vec![
-        state("idle"),
-        state("running"),
-        initial(),
-    ]);
+    let model = define(
+        "TestMachine",
+        vec![state("idle"), state("running"), initial()],
+    );
 
     // Start the state machine
     let hsm = start(&ctx, instance, model)?;
@@ -82,11 +80,10 @@ async fn test_simple_transitions() -> Result<()> {
     let instance = TestInstance::new();
     let ctx = Context::new();
 
-    let model = define("SimpleTransitionMachine", vec![
-        state("start"),
-        state("end"),
-        initial(),
-    ]);
+    let model = define(
+        "SimpleTransitionMachine",
+        vec![state("start"), state("end"), initial()],
+    );
 
     let hsm = start(&ctx, instance, model)?;
     hsm.start().await?;
@@ -102,10 +99,7 @@ async fn test_entry_and_exit_actions() -> Result<()> {
     let instance = TestInstance::new();
     let ctx = Context::new();
 
-    let model = define("ActionMachine", vec![
-        state("active"),
-        initial(),
-    ]);
+    let model = define("ActionMachine", vec![state("active"), initial()]);
 
     let hsm = start(&ctx, instance, model)?;
     hsm.start().await?;
@@ -121,12 +115,15 @@ async fn test_guard_conditions() -> Result<()> {
     instance.counter = 5;
     let ctx = Context::new();
 
-    let model = define("GuardMachine", vec![
-        state("testing"),
-        state("success"),
-        state("failure"),
-        initial(),
-    ]);
+    let model = define(
+        "GuardMachine",
+        vec![
+            state("testing"),
+            state("success"),
+            state("failure"),
+            initial(),
+        ],
+    );
 
     let hsm = start(&ctx, instance, model)?;
     hsm.start().await?;
@@ -141,13 +138,16 @@ async fn test_choice_pseudostates() -> Result<()> {
     let instance = TestInstance::new();
     let ctx = Context::new();
 
-    let model = define("ChoiceMachine", vec![
-        state("deciding"),
-        choice("junction"),
-        state("option1"),
-        state("option2"),
-        initial(),
-    ]);
+    let model = define(
+        "ChoiceMachine",
+        vec![
+            state("deciding"),
+            choice("junction"),
+            state("option1"),
+            state("option2"),
+            initial(),
+        ],
+    );
 
     let hsm = start(&ctx, instance, model)?;
     hsm.start().await?;
@@ -161,11 +161,10 @@ async fn test_final_states() -> Result<()> {
     let instance = TestInstance::new();
     let ctx = Context::new();
 
-    let model = define("FinalMachine", vec![
-        state("working"),
-        final_state("completed"),
-        initial(),
-    ]);
+    let model = define(
+        "FinalMachine",
+        vec![state("working"), final_state("completed"), initial()],
+    );
 
     let hsm = start(&ctx, instance, model)?;
     hsm.start().await?;
@@ -179,11 +178,10 @@ async fn test_activities() -> Result<()> {
     let instance = TestInstance::new();
     let ctx = Context::new();
 
-    let model = define("ActivityMachine", vec![
-        state("active"),
-        state("inactive"),
-        initial(),
-    ]);
+    let model = define(
+        "ActivityMachine",
+        vec![state("active"), state("inactive"), initial()],
+    );
 
     let hsm = start(&ctx, instance, model)?;
     hsm.start().await?;
@@ -197,12 +195,10 @@ async fn test_hierarchical_states() -> Result<()> {
     let instance = TestInstance::new();
     let ctx = Context::new();
 
-    let model = define("HierarchicalMachine", vec![
-        state("parent"),
-        state("child1"),
-        state("child2"),
-        initial(),
-    ]);
+    let model = define(
+        "HierarchicalMachine",
+        vec![state("parent"), state("child1"), state("child2"), initial()],
+    );
 
     let hsm = start(&ctx, instance, model)?;
     hsm.start().await?;
@@ -216,18 +212,17 @@ async fn test_event_dispatching() -> Result<()> {
     let instance = TestInstance::new();
     let ctx = Context::new();
 
-    let model = define("EventMachine", vec![
-        state("listening"),
-        state("responding"),
-        initial(),
-    ]);
+    let model = define(
+        "EventMachine",
+        vec![state("listening"), state("responding"), initial()],
+    );
 
     let hsm = start(&ctx, instance, model)?;
     hsm.start().await?;
 
     // Test event dispatching
     hsm.dispatch(&ctx, Event::new("test_event")).await?;
-    
+
     // Events should be processed without errors
     assert!(!hsm.state().is_empty());
     Ok(())
@@ -238,11 +233,10 @@ async fn test_deferred_events() -> Result<()> {
     let instance = TestInstance::new();
     let ctx = Context::new();
 
-    let model = define("DeferredMachine", vec![
-        state("busy"),
-        state("ready"),
-        initial(),
-    ]);
+    let model = define(
+        "DeferredMachine",
+        vec![state("busy"), state("ready"), initial()],
+    );
 
     let hsm = start(&ctx, instance, model)?;
     hsm.start().await?;
@@ -257,10 +251,7 @@ async fn test_validation() -> Result<()> {
     let ctx = Context::new();
 
     // Test that validation catches invalid models
-    let model = define("ValidationMachine", vec![
-        state("valid"),
-        initial(),
-    ]);
+    let model = define("ValidationMachine", vec![state("valid"), initial()]);
 
     // Validation should pass for a well-formed model
     let validation_result = validate(&model);
@@ -279,10 +270,7 @@ async fn test_context_cancellation() -> Result<()> {
     let instance = TestInstance::new();
     let ctx = Context::new();
 
-    let model = define("CancellationMachine", vec![
-        state("running"),
-        initial(),
-    ]);
+    let model = define("CancellationMachine", vec![state("running"), initial()]);
 
     let hsm = start(&ctx, instance, model)?;
     hsm.start().await?;
@@ -298,18 +286,17 @@ async fn test_error_handling() -> Result<()> {
     let instance = TestInstance::new();
     let ctx = Context::new();
 
-    let model = define("ErrorMachine", vec![
-        state("normal"),
-        state("error"),
-        initial(),
-    ]);
+    let model = define(
+        "ErrorMachine",
+        vec![state("normal"), state("error"), initial()],
+    );
 
     let hsm = start(&ctx, instance, model)?;
     hsm.start().await?;
 
     // Test that the machine handles errors gracefully
     hsm.dispatch(&ctx, Event::new("unknown_event")).await?;
-    
+
     // Should not crash on unknown events
     assert!(!hsm.state().is_empty());
     Ok(())
@@ -320,17 +307,15 @@ async fn test_performance_with_many_events() -> Result<()> {
     let instance = TestInstance::new();
     let ctx = Context::new();
 
-    let model = define("PerformanceMachine", vec![
-        state("processing"),
-        initial(),
-    ]);
+    let model = define("PerformanceMachine", vec![state("processing"), initial()]);
 
     let hsm = start(&ctx, instance, model)?;
     hsm.start().await?;
 
     // Dispatch many events rapidly
     for i in 0..100 {
-        hsm.dispatch(&ctx, Event::new(&format!("event_{}", i))).await?;
+        hsm.dispatch(&ctx, Event::new(&format!("event_{}", i)))
+            .await?;
     }
 
     // Should handle rapid event dispatch without issues
@@ -343,10 +328,7 @@ async fn test_concurrent_access() -> Result<()> {
     let instance = TestInstance::new();
     let ctx = Context::new();
 
-    let model = define("ConcurrentMachine", vec![
-        state("shared"),
-        initial(),
-    ]);
+    let model = define("ConcurrentMachine", vec![state("shared"), initial()]);
 
     let hsm = start(&ctx, instance, model)?;
     hsm.start().await?;
@@ -354,15 +336,17 @@ async fn test_concurrent_access() -> Result<()> {
     // Test concurrent access patterns
     let hsm_clone = hsm.clone();
     let ctx_clone = ctx.clone();
-    
+
     let handle = tokio::spawn(async move {
-        let _ = hsm_clone.dispatch(&ctx_clone, Event::new("concurrent_event")).await;
+        let _ = hsm_clone
+            .dispatch(&ctx_clone, Event::new("concurrent_event"))
+            .await;
     });
 
     hsm.dispatch(&ctx, Event::new("main_event")).await?;
-    
+
     let _ = handle.await;
-    
+
     // Should handle concurrent access safely
     assert!(!hsm.state().is_empty());
     Ok(())
@@ -373,11 +357,10 @@ async fn test_memory_management() -> Result<()> {
     let instance = TestInstance::new();
     let ctx = Context::new();
 
-    let model = define("MemoryMachine", vec![
-        state("allocating"),
-        state("deallocating"),
-        initial(),
-    ]);
+    let model = define(
+        "MemoryMachine",
+        vec![state("allocating"), state("deallocating"), initial()],
+    );
 
     let hsm = start(&ctx, instance, model)?;
     hsm.start().await?;
@@ -398,10 +381,7 @@ async fn test_event_data_handling() -> Result<()> {
     let instance = TestInstance::new();
     let ctx = Context::new();
 
-    let model = define("EventDataMachine", vec![
-        state("processing"),
-        initial(),
-    ]);
+    let model = define("EventDataMachine", vec![state("processing"), initial()]);
 
     let hsm = start(&ctx, instance, model)?;
     hsm.start().await?;
@@ -418,16 +398,15 @@ async fn test_event_data_handling() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test] 
+#[tokio::test]
 async fn test_path_resolution() -> Result<()> {
     let instance = TestInstance::new();
     let ctx = Context::new();
 
-    let model = define("PathMachine", vec![
-        state("root"),
-        state("child"),
-        initial(),
-    ]);
+    let model = define(
+        "PathMachine",
+        vec![state("root"), state("child"), initial()],
+    );
 
     let hsm = start(&ctx, instance, model)?;
     hsm.start().await?;
@@ -442,7 +421,7 @@ async fn test_path_resolution() -> Result<()> {
 async fn test_kind_system() {
     // Test the kind hierarchy system
     use crate::kind::*;
-    
+
     assert!(is_kind(STATE, VERTEX));
     assert!(is_kind(CHOICE, PSEUDOSTATE));
     assert!(is_kind(INITIAL, PSEUDOSTATE));
@@ -454,10 +433,7 @@ async fn test_queue_behavior() -> Result<()> {
     let instance = TestInstance::new();
     let ctx = Context::new();
 
-    let model = define("QueueMachine", vec![
-        state("receiver"),
-        initial(),
-    ]);
+    let model = define("QueueMachine", vec![state("receiver"), initial()]);
 
     let hsm = start(&ctx, instance, model)?;
     hsm.start().await?;
@@ -492,12 +468,10 @@ async fn test_model_lifecycle() -> Result<()> {
     let ctx = Context::new();
 
     // Test full model lifecycle
-    let model = define("LifecycleMachine", vec![
-        state("start"),
-        state("middle"),
-        state("end"),
-        initial(),
-    ]);
+    let model = define(
+        "LifecycleMachine",
+        vec![state("start"), state("middle"), state("end"), initial()],
+    );
 
     // Validate the model
     let validation_result = validate(&model);
