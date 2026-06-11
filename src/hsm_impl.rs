@@ -16,6 +16,8 @@ use crate::model::Model;
 use crate::queue::EventQueue;
 
 pub type SleepFn = Arc<dyn Fn(Duration) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
+// Queue hooks are intentionally synchronous: Push, Pop, and Len must return
+// their result/error directly to the runtime, not a future or channel.
 pub type QueuePushFn = Arc<dyn Fn(&Context, Event) -> Result<()> + Send + Sync>;
 pub type QueuePopFn = Arc<dyn Fn(&Context) -> Result<Option<Event>> + Send + Sync>;
 pub type QueueLenFn = Arc<dyn Fn(&Context) -> Result<usize> + Send + Sync>;
@@ -143,7 +145,11 @@ impl<T: Instance> HSM<T> {
         Self::new_with_config(instance, model, RuntimeConfig::default())
     }
 
-    pub fn new_with_config(instance: T, model: Model<T>, config: RuntimeConfig) -> Self {
+    pub fn new_with_config(instance: T, mut model: Model<T>, config: RuntimeConfig) -> Self {
+        if model.history_updates.is_empty() {
+            model.build_history_table();
+        }
+
         let model = Arc::new(model);
         let instance = Arc::new(RwLock::new(instance));
         let initial_state = model.state.qualified_name().to_string();
@@ -553,7 +559,9 @@ impl<T: Instance> HSM<T> {
             return None;
         };
 
-        self.remember_history(current_state);
+        if !path.exit.is_empty() {
+            self.remember_history(current_state);
+        }
 
         // Exit states
         for exiting in &path.exit {
@@ -765,42 +773,16 @@ impl<T: Instance> HSM<T> {
     }
 
     fn remember_history(&self, leaf: &str) {
-        let mut current = crate::path::dirname(leaf).to_string();
-        while !current.is_empty() && current != "/" {
-            if self.model.get_state(&current).is_some() || current == self.model.qualified_name() {
-                if let Some(direct_child) = self.direct_child_of(&current, leaf) {
-                    self.shallow_history
-                        .lock()
-                        .unwrap()
-                        .insert(current.clone(), direct_child);
-                }
-                self.deep_history
-                    .lock()
-                    .unwrap()
-                    .insert(current.clone(), leaf.to_string());
-            }
-
-            let parent = crate::path::dirname(&current).to_string();
-            if parent == current {
-                break;
-            }
-            current = parent;
-        }
-    }
-
-    fn direct_child_of(&self, parent: &str, leaf: &str) -> Option<String> {
-        if !crate::path::is_ancestor_or_equal(parent, leaf) || parent == leaf {
-            return None;
-        }
-
-        let prefix = if parent == "/" {
-            "/".to_string()
-        } else {
-            format!("{parent}/")
+        let Some(updates) = self.model.history_updates.get(leaf) else {
+            return;
         };
-        let rest = leaf.strip_prefix(&prefix)?;
-        let child_name = rest.split('/').next()?;
-        Some(crate::path::join(parent, child_name))
+
+        let mut shallow_history = self.shallow_history.lock().unwrap();
+        let mut deep_history = self.deep_history.lock().unwrap();
+        for update in updates {
+            shallow_history.insert(update.parent.clone(), update.shallow_child.clone());
+            deep_history.insert(update.parent.clone(), update.deep_leaf.clone());
+        }
     }
 
     async fn exit_state(&self, state: &State, event: &Event, ctx: &Context) {

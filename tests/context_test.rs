@@ -40,7 +40,10 @@ fn test_context_clone() {
 
     ctx3.cancel();
     assert!(ctx3.is_done());
-    assert!(ctx4.is_done(), "Cloned context should share cancellation state");
+    assert!(
+        ctx4.is_done(),
+        "Cloned context should share cancellation state"
+    );
 }
 
 #[test]

@@ -7,7 +7,7 @@ use crate::element::{
     State, Transition, Vertex,
 };
 use crate::kind;
-use crate::path::{dirname, join};
+use crate::path::dirname;
 
 #[derive(Debug)]
 pub struct Model<T: Instance> {
@@ -15,7 +15,15 @@ pub struct Model<T: Instance> {
     pub members: HashMap<String, ElementVariant<T>>,
     pub transition_map: HashMap<String, HashMap<String, Vec<String>>>,
     pub deferred_map: HashMap<String, HashMap<String, bool>>,
+    pub history_updates: HashMap<String, Vec<HistoryUpdate>>,
     pub attributes: HashMap<String, Attribute>,
+}
+
+#[derive(Debug, Clone)]
+pub struct HistoryUpdate {
+    pub parent: String,
+    pub shallow_child: String,
+    pub deep_leaf: String,
 }
 
 impl<T: Instance> Model<T> {
@@ -40,6 +48,7 @@ impl<T: Instance> Model<T> {
             members: HashMap::new(),
             transition_map: HashMap::new(),
             deferred_map: HashMap::new(),
+            history_updates: HashMap::new(),
             attributes: HashMap::new(),
         }
     }
@@ -306,6 +315,39 @@ impl<T: Instance> Model<T> {
                     current_path = parent.to_string();
                 }
             }
+        }
+    }
+
+    pub fn build_history_table(&mut self) {
+        self.history_updates.clear();
+
+        for leaf_name in self.members.keys().cloned().collect::<Vec<_>>() {
+            if self.get_state(&leaf_name).is_none() {
+                continue;
+            }
+
+            let mut updates = Vec::new();
+            let mut child = leaf_name.clone();
+            let mut parent = dirname(&child).to_string();
+
+            while !parent.is_empty() && parent != "/" && parent != child {
+                if self.get_state(&parent).is_some() || parent == self.qualified_name() {
+                    updates.push(HistoryUpdate {
+                        parent: parent.clone(),
+                        shallow_child: child.clone(),
+                        deep_leaf: leaf_name.clone(),
+                    });
+                }
+
+                if parent == self.qualified_name() {
+                    break;
+                }
+
+                child = parent;
+                parent = dirname(&child).to_string();
+            }
+
+            self.history_updates.insert(leaf_name, updates);
         }
     }
 }

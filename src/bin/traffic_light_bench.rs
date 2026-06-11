@@ -103,6 +103,34 @@ fn env_usize(name: &str, default_value: usize) -> usize {
         .unwrap_or(default_value)
 }
 
+fn env_bool(name: &str) -> bool {
+    env::var(name)
+        .map(|value| value != "" && value != "0" && value != "false" && value != "False")
+        .unwrap_or(false)
+}
+
+fn assert_traffic_light(
+    sm: &HSM<TrafficLight>,
+    state: &str,
+    cars_waiting: i32,
+    timer: i32,
+    step: &str,
+) {
+    if sm.state() != state {
+        panic!("{}: state {}, expected {}", step, sm.state(), state);
+    }
+    let inst = sm.instance().read().unwrap();
+    if inst.cars_waiting != cars_waiting {
+        panic!(
+            "{}: cars_waiting {}, expected {}",
+            step, inst.cars_waiting, cars_waiting
+        );
+    }
+    if inst.timer != timer {
+        panic!("{}: timer {}, expected {}", step, inst.timer, timer);
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let warmup_ms = env_usize("HSM_BENCH_WARMUP_MS", 250);
@@ -179,9 +207,70 @@ async fn main() -> Result<()> {
 
     let warmup_inst = TrafficLight::new();
     let warmup_sm = start(&ctx, warmup_inst, create_model!()).unwrap();
+    warmup_sm.start().await.unwrap();
 
     let car_arrival = Event::new("CarArrival");
     let timer_event = Event::new("TimerEvent");
+
+    if env_bool("HSM_BENCH_VALIDATE") {
+        let validation_sm = start(&ctx, TrafficLight::new(), create_model!()).unwrap();
+        validation_sm.start().await.unwrap();
+        assert_traffic_light(
+            &validation_sm,
+            "/TrafficLight/operational/red",
+            0,
+            0,
+            "initial",
+        );
+
+        validation_sm
+            .dispatch(&ctx, car_arrival.clone())
+            .await
+            .unwrap();
+        assert_traffic_light(
+            &validation_sm,
+            "/TrafficLight/operational/red",
+            1,
+            0,
+            "after CarArrival",
+        );
+
+        validation_sm
+            .dispatch(&ctx, timer_event.clone())
+            .await
+            .unwrap();
+        assert_traffic_light(
+            &validation_sm,
+            "/TrafficLight/operational/green",
+            1,
+            40,
+            "after first TimerEvent",
+        );
+
+        validation_sm
+            .dispatch(&ctx, timer_event.clone())
+            .await
+            .unwrap();
+        assert_traffic_light(
+            &validation_sm,
+            "/TrafficLight/operational/yellow",
+            1,
+            40,
+            "after second TimerEvent",
+        );
+
+        validation_sm
+            .dispatch(&ctx, timer_event.clone())
+            .await
+            .unwrap();
+        assert_traffic_light(
+            &validation_sm,
+            "/TrafficLight/operational/red",
+            1,
+            40,
+            "after third TimerEvent",
+        );
+    }
 
     let mut batch_cycles = 1usize;
     loop {
@@ -199,6 +288,7 @@ async fn main() -> Result<()> {
 
     let inst = TrafficLight::new();
     let sm = start(&ctx, inst, create_model!()).unwrap();
+    sm.start().await.unwrap();
 
     let start_time = Instant::now();
     let mut completed_cycles = 0usize;

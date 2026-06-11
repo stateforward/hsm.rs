@@ -46,6 +46,7 @@ pub fn define<T: Instance + 'static>(
     model.calculate_transition_paths();
     model.build_transition_table();
     model.build_deferred_table();
+    model.build_history_table();
 
     model
 }
