@@ -1,4 +1,4 @@
-use rust::*;
+use stateforward_hsm::*;
 /**
  * @fileoverview Test entry and exit function execution
  * Tests single and multiple entry/exit actions, execution order, and behavior during transitions

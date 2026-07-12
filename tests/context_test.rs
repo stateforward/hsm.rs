@@ -1,4 +1,4 @@
-use rust::context::*;
+use stateforward_hsm::context::*;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
@@ -10,6 +10,28 @@ fn test_context_creation() {
 
     let ctx_default = Context::default();
     assert!(!ctx_default.is_done(), "Default context should not be done");
+
+    let ctx_made = make_context();
+    assert!(
+        !ctx_made.is_done(),
+        "make_context should create a live context"
+    );
+
+    let ctx_pascal = MakeContext();
+    assert!(
+        !ctx_pascal.is_done(),
+        "MakeContext should create a live context"
+    );
+}
+
+#[test]
+fn test_context_runtime_keys() {
+    assert_eq!(Keys::HSM, ContextKey::HSM);
+    assert_eq!(Keys::Owner, ContextKey::Owner);
+    assert_eq!(Keys::Instances, ContextKey::Instances);
+    assert_ne!(Keys::HSM, Keys::Owner);
+    assert_ne!(Keys::HSM, Keys::Instances);
+    assert_ne!(Keys::Owner, Keys::Instances);
 }
 
 #[test]

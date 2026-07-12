@@ -6,6 +6,20 @@ use std::sync::{
 };
 use std::time::{Duration, Instant};
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub enum ContextKey {
+    HSM,
+    Owner,
+    Instances,
+}
+
+#[allow(non_snake_case, non_upper_case_globals)]
+pub mod Keys {
+    pub const HSM: super::ContextKey = super::ContextKey::HSM;
+    pub const Owner: super::ContextKey = super::ContextKey::Owner;
+    pub const Instances: super::ContextKey = super::ContextKey::Instances;
+}
+
 pub struct Context {
     cancelled: Arc<AtomicBool>,
     deadline: Option<Instant>,
@@ -59,6 +73,10 @@ impl Context {
         self.cancelled.store(true, Ordering::Release);
     }
 
+    pub(crate) fn registry_key(&self) -> usize {
+        Arc::as_ptr(&self.cancelled) as usize
+    }
+
     // Legacy compatibility
     pub fn is_done(&self) -> bool {
         self.is_cancelled()
@@ -88,4 +106,13 @@ impl Default for Context {
     fn default() -> Self {
         Self::new()
     }
+}
+
+pub fn make_context() -> Context {
+    Context::new()
+}
+
+#[allow(non_snake_case)]
+pub fn MakeContext() -> Context {
+    make_context()
 }

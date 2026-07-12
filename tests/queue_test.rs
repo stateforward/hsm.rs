@@ -1,11 +1,11 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
-use rust::Context;
-use rust::event::Event;
-use rust::kind;
-use rust::queue::*;
-use rust::{Queue, RuntimeQueue};
+use stateforward_hsm::Context;
+use stateforward_hsm::event::Event;
+use stateforward_hsm::kind;
+use stateforward_hsm::queue::*;
+use stateforward_hsm::{Queue, RuntimeQueue};
 
 #[test]
 fn test_queue_creation() {
@@ -67,12 +67,26 @@ fn test_queue_error_event_priority() {
 
     // Error event should come first
     let first = queue.pop().unwrap();
-    assert_eq!(first.name, "hsm_error");
+    assert_eq!(first.name, "hsm/error");
     assert_eq!(first.kind, kind::ERROR_EVENT);
 
     // Then regular events
     assert_eq!(queue.pop().unwrap().name, "regular1");
     assert_eq!(queue.pop().unwrap().name, "regular2");
+}
+
+#[test]
+fn test_queue_clear_drops_completion_and_regular_events() {
+    let mut queue = EventQueue::new();
+
+    queue.push(Event::new("regular1"));
+    queue.push(Event::completion("completion1"));
+    queue.push(Event::new("regular2"));
+
+    assert_eq!(queue.len(), 3);
+    queue.clear();
+    assert!(queue.is_empty());
+    assert!(queue.pop().is_none());
 }
 
 #[test]
@@ -120,5 +134,37 @@ fn test_custom_regular_queue_keeps_runtime_completion_priority() {
         queue.pop_with_context(&ctx).unwrap().unwrap().name,
         "regular2"
     );
+    assert!(queue.pop_with_context(&ctx).unwrap().is_none());
+}
+
+#[test]
+fn test_custom_regular_queue_clear_drains_custom_storage() {
+    let ctx = Context::new();
+    let regular_events = Arc::new(Mutex::new(VecDeque::new()));
+
+    let push_regular = regular_events.clone();
+    let pop_regular = regular_events.clone();
+    let len_regular = regular_events.clone();
+    let custom: RuntimeQueue = Queue(
+        Arc::new(move |_ctx, event| {
+            push_regular.lock().unwrap().push_back(event);
+            Ok(())
+        }),
+        Arc::new(move |_ctx| Ok(pop_regular.lock().unwrap().pop_front())),
+        Arc::new(move |_ctx| Ok(len_regular.lock().unwrap().len())),
+    );
+
+    let mut queue = EventQueue::with_regular_queue(custom);
+    queue
+        .push_with_context(&ctx, Event::new("regular1"))
+        .unwrap();
+    queue
+        .push_with_context(&ctx, Event::completion("completion1"))
+        .unwrap();
+
+    assert_eq!(queue.len_with_context(&ctx), 2);
+    queue.clear_with_context(&ctx);
+    assert_eq!(queue.len_with_context(&ctx), 0);
+    assert!(regular_events.lock().unwrap().is_empty());
     assert!(queue.pop_with_context(&ctx).unwrap().is_none());
 }

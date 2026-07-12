@@ -1,4 +1,4 @@
-use rust::path::*;
+use stateforward_hsm::path::*;
 
 #[test]
 fn test_join_basic() {

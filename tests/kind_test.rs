@@ -1,4 +1,4 @@
-use rust::{is_kind, kind_base, make_kind};
+use stateforward_hsm::{is_kind, kind, kind_base, make_kind};
 
 // Test family hierarchy like C++ version
 const GRANDMA: u64 = make_kind!(1); // Start from 1, not 0
@@ -50,6 +50,100 @@ fn test_basic_macro_functionality() {
     assert!(is_kind(with_two_bases, simple));
     assert!(is_kind(with_two_bases, with_one_base));
     assert!(!is_kind(simple, with_one_base));
+}
+
+#[test]
+fn test_pascal_kind_aliases_match_internal_kinds() {
+    assert_eq!(stateforward_hsm::ElementKind, kind::ELEMENT);
+    assert_eq!(stateforward_hsm::StateKind, kind::STATE);
+    assert_eq!(stateforward_hsm::TransitionKind, kind::TRANSITION);
+    assert_eq!(stateforward_hsm::EventKind, kind::EVENT);
+    assert_eq!(
+        stateforward_hsm::CompletionEventKind,
+        kind::COMPLETION_EVENT
+    );
+    assert_eq!(stateforward_hsm::ErrorEventKind, kind::ERROR_EVENT);
+    assert_eq!(stateforward_hsm::TimeEventKind, kind::TIME_EVENT);
+    assert_eq!(stateforward_hsm::CallEventKind, kind::CALL_EVENT);
+    assert_eq!(stateforward_hsm::ChangeEventKind, kind::CHANGE_EVENT);
+    assert_eq!(
+        stateforward_hsm::SetEventKind,
+        stateforward_hsm::ChangeEventKind
+    );
+    assert_eq!(stateforward_hsm::ObservationKind, kind::OBSERVATION);
+    assert_eq!(
+        stateforward_hsm::SubmachineStateKind,
+        kind::SUBMACHINE_STATE
+    );
+    assert_eq!(stateforward_hsm::EntryPointKind, kind::ENTRY_POINT);
+    assert_eq!(stateforward_hsm::ExitPointKind, kind::EXIT_POINT);
+}
+
+#[test]
+fn test_pascal_make_kind_and_is_kind_api() {
+    let custom_event = stateforward_hsm::MakeKind(&[stateforward_hsm::EventKind]);
+    assert!(stateforward_hsm::IsKind(
+        custom_event,
+        &[stateforward_hsm::EventKind]
+    ));
+    assert!(stateforward_hsm::IsKind(
+        custom_event,
+        &[stateforward_hsm::ElementKind]
+    ));
+    assert!(!stateforward_hsm::IsKind(
+        custom_event,
+        &[stateforward_hsm::StateKind]
+    ));
+
+    let custom_empty = stateforward_hsm::MakeKind(&[]);
+    assert!(!stateforward_hsm::IsKind(
+        custom_empty,
+        &[stateforward_hsm::EventKind]
+    ));
+
+    let macro_kind =
+        stateforward_hsm::MakeKind!(stateforward_hsm::StateKind, stateforward_hsm::EventKind);
+    assert!(stateforward_hsm::IsKind!(
+        macro_kind,
+        stateforward_hsm::StateKind
+    ));
+    assert!(stateforward_hsm::IsKind!(
+        macro_kind,
+        stateforward_hsm::EventKind
+    ));
+    assert!(!stateforward_hsm::IsKind!(
+        macro_kind,
+        stateforward_hsm::TransitionKind,
+        stateforward_hsm::PseudostateKind
+    ));
+}
+
+#[test]
+fn test_runtime_kind_hierarchy_aliases() {
+    assert!(is_kind(
+        stateforward_hsm::StateMachineKind,
+        stateforward_hsm::ConcurrentKind
+    ));
+    assert!(is_kind(
+        stateforward_hsm::StateMachineKind,
+        stateforward_hsm::BehaviorKind
+    ));
+    assert!(is_kind(
+        stateforward_hsm::StateMachineKind,
+        stateforward_hsm::NamespaceKind
+    ));
+    assert!(is_kind(
+        stateforward_hsm::SequentialKind,
+        stateforward_hsm::BehaviorKind
+    ));
+    assert!(is_kind(
+        stateforward_hsm::ChangeEventKind,
+        stateforward_hsm::EventKind
+    ));
+    assert!(is_kind(
+        stateforward_hsm::ObservationKind,
+        stateforward_hsm::ElementKind
+    ));
 }
 
 #[test]

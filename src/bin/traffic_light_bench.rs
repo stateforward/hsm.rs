@@ -1,4 +1,4 @@
-use rust::*;
+use stateforward_hsm::*;
 use std::env;
 use std::future::Future;
 use std::pin::Pin;

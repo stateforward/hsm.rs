@@ -3,11 +3,11 @@
 use std::collections::VecDeque;
 use std::fmt;
 
-use crate::RuntimeQueue;
 use crate::context::Context;
 use crate::error::Result;
 use crate::event::Event;
 use crate::kind::{self, is_kind};
+use crate::runtime::RuntimeQueue;
 
 enum RegularQueue {
     Default(VecDeque<Event>),
@@ -110,6 +110,26 @@ impl EventQueue {
             RegularQueue::Custom(queue) => queue.len(ctx).unwrap_or(0),
         };
         self.completion_events.len() + regular_len
+    }
+
+    pub fn clear_with_context(&mut self, ctx: &Context) {
+        self.completion_events.clear();
+
+        match &mut self.regular_events {
+            RegularQueue::Default(events) => events.clear(),
+            RegularQueue::Custom(queue) => {
+                while queue.len(ctx).unwrap_or(0) > 0 {
+                    match queue.pop(ctx) {
+                        Ok(Some(_)) => {}
+                        _ => break,
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.clear_with_context(&Context::new());
     }
 
     pub fn is_empty(&self) -> bool {

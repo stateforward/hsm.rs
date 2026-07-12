@@ -1,4 +1,4 @@
-use rust::*;
+use stateforward_hsm::*;
 /**
  * @fileoverview Test basic state transitions and state machine lifecycle
  * Tests fundamental HSM features including state transitions, lifecycle methods, and basic event handling

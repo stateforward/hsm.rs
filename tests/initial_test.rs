@@ -1,4 +1,4 @@
-use rust::*;
+use stateforward_hsm::*;
 /**
  * @fileoverview Tests for initial transitions in HSM
  * Tests initial state behavior, automatic transitions, and initial target resolution

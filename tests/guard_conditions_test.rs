@@ -1,4 +1,4 @@
-use rust::*;
+use stateforward_hsm::*;
 /**
  * @fileoverview Test guard conditions and transition evaluation
  * Tests synchronous guards, complex conditions, and guard evaluation order

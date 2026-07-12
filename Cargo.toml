@@ -1,7 +1,15 @@
 [package]
-name = "rust"
+name = "stateforward-hsm"
 version = "0.2.0"
 edition = "2024"
+description = "A hierarchical state machine runtime for Rust"
+repository = "https://github.com/stateforward/hsm.rs"
+readme = "README.md"
+keywords = ["state-machine", "hsm", "statechart"]
+categories = ["asynchronous", "data-structures"]
+
+[lib]
+name = "stateforward_hsm"
 
 [dependencies]
 thiserror = "1.0"

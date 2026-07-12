@@ -1,4 +1,4 @@
-use rust::*;
+use stateforward_hsm::*;
 /**
  * Simplified tests for the Rust HSM implementation following the reference patterns
  * Tests basic functionality that currently works
@@ -136,8 +136,12 @@ fn test_start_function() {
 
 #[test]
 fn test_validation_function() {
-    let model: Model<MyInstance> =
-        define!("ValidationTestMachine", state!("test1"), state!("test2"));
+    let model: Model<MyInstance> = define!(
+        "ValidationTestMachine",
+        initial!(target!("test1")),
+        state!("test1"),
+        state!("test2")
+    );
 
     // Test that validation function works
     let validation_result = validate(&model);

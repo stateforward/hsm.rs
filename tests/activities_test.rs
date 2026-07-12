@@ -1,4 +1,4 @@
-use rust::*;
+use stateforward_hsm::*;
 /**
  * @fileoverview Test activity execution and cancellation
  * Tests long-running activities, concurrent execution, and proper cancellation on state transitions

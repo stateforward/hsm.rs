@@ -1,4 +1,4 @@
-use rust::*;
+use stateforward_hsm::*;
 /**
  * @fileoverview Comprehensive HSM tests for Rust implementation
  * Tests cover all core functionality, edge cases, and error handling
@@ -62,7 +62,11 @@ async fn test_basic_state_machine_creation() -> Result<()> {
     // Create a simple state machine using the define function
     let model = define(
         "TestMachine",
-        vec![state("idle"), state("running"), initial()],
+        vec![
+            state("idle"),
+            state("running"),
+            initial_with_target(target("idle")),
+        ],
     );
 
     // Start the state machine
@@ -82,7 +86,11 @@ async fn test_simple_transitions() -> Result<()> {
 
     let model = define(
         "SimpleTransitionMachine",
-        vec![state("start"), state("end"), initial()],
+        vec![
+            state("start"),
+            state("end"),
+            initial_with_target(target("start")),
+        ],
     );
 
     let hsm = start(&ctx, instance, model)?;
@@ -99,7 +107,10 @@ async fn test_entry_and_exit_actions() -> Result<()> {
     let instance = TestInstance::new();
     let ctx = Context::new();
 
-    let model = define("ActionMachine", vec![state("active"), initial()]);
+    let model = define(
+        "ActionMachine",
+        vec![state("active"), initial_with_target(target("active"))],
+    );
 
     let hsm = start(&ctx, instance, model)?;
     hsm.start().await?;
@@ -121,7 +132,7 @@ async fn test_guard_conditions() -> Result<()> {
             state("testing"),
             state("success"),
             state("failure"),
-            initial(),
+            initial_with_target(target("testing")),
         ],
     );
 
@@ -142,10 +153,10 @@ async fn test_choice_pseudostates() -> Result<()> {
         "ChoiceMachine",
         vec![
             state("deciding"),
-            choice("junction"),
+            choice_with_transitions("junction", vec![transition(vec![target("option1")])]),
             state("option1"),
             state("option2"),
-            initial(),
+            initial_with_target(target("deciding")),
         ],
     );
 
@@ -163,7 +174,11 @@ async fn test_final_states() -> Result<()> {
 
     let model = define(
         "FinalMachine",
-        vec![state("working"), final_state("completed"), initial()],
+        vec![
+            state("working"),
+            final_state("completed"),
+            initial_with_target(target("working")),
+        ],
     );
 
     let hsm = start(&ctx, instance, model)?;
@@ -180,7 +195,11 @@ async fn test_activities() -> Result<()> {
 
     let model = define(
         "ActivityMachine",
-        vec![state("active"), state("inactive"), initial()],
+        vec![
+            state("active"),
+            state("inactive"),
+            initial_with_target(target("active")),
+        ],
     );
 
     let hsm = start(&ctx, instance, model)?;
@@ -197,7 +216,12 @@ async fn test_hierarchical_states() -> Result<()> {
 
     let model = define(
         "HierarchicalMachine",
-        vec![state("parent"), state("child1"), state("child2"), initial()],
+        vec![
+            state("parent"),
+            state("child1"),
+            state("child2"),
+            initial_with_target(target("parent")),
+        ],
     );
 
     let hsm = start(&ctx, instance, model)?;
@@ -214,7 +238,11 @@ async fn test_event_dispatching() -> Result<()> {
 
     let model = define(
         "EventMachine",
-        vec![state("listening"), state("responding"), initial()],
+        vec![
+            state("listening"),
+            state("responding"),
+            initial_with_target(target("listening")),
+        ],
     );
 
     let hsm = start(&ctx, instance, model)?;
@@ -235,7 +263,11 @@ async fn test_deferred_events() -> Result<()> {
 
     let model = define(
         "DeferredMachine",
-        vec![state("busy"), state("ready"), initial()],
+        vec![
+            state("busy"),
+            state("ready"),
+            initial_with_target(target("busy")),
+        ],
     );
 
     let hsm = start(&ctx, instance, model)?;
@@ -251,7 +283,10 @@ async fn test_validation() -> Result<()> {
     let ctx = Context::new();
 
     // Test that validation catches invalid models
-    let model = define("ValidationMachine", vec![state("valid"), initial()]);
+    let model = define(
+        "ValidationMachine",
+        vec![state("valid"), initial_with_target(target("valid"))],
+    );
 
     // Validation should pass for a well-formed model
     let validation_result = validate(&model);
@@ -270,7 +305,10 @@ async fn test_context_cancellation() -> Result<()> {
     let instance = TestInstance::new();
     let ctx = Context::new();
 
-    let model = define("CancellationMachine", vec![state("running"), initial()]);
+    let model = define(
+        "CancellationMachine",
+        vec![state("running"), initial_with_target(target("running"))],
+    );
 
     let hsm = start(&ctx, instance, model)?;
     hsm.start().await?;
@@ -288,7 +326,11 @@ async fn test_error_handling() -> Result<()> {
 
     let model = define(
         "ErrorMachine",
-        vec![state("normal"), state("error"), initial()],
+        vec![
+            state("normal"),
+            state("error"),
+            initial_with_target(target("normal")),
+        ],
     );
 
     let hsm = start(&ctx, instance, model)?;
@@ -307,7 +349,13 @@ async fn test_performance_with_many_events() -> Result<()> {
     let instance = TestInstance::new();
     let ctx = Context::new();
 
-    let model = define("PerformanceMachine", vec![state("processing"), initial()]);
+    let model = define(
+        "PerformanceMachine",
+        vec![
+            state("processing"),
+            initial_with_target(target("processing")),
+        ],
+    );
 
     let hsm = start(&ctx, instance, model)?;
     hsm.start().await?;
@@ -328,7 +376,10 @@ async fn test_concurrent_access() -> Result<()> {
     let instance = TestInstance::new();
     let ctx = Context::new();
 
-    let model = define("ConcurrentMachine", vec![state("shared"), initial()]);
+    let model = define(
+        "ConcurrentMachine",
+        vec![state("shared"), initial_with_target(target("shared"))],
+    );
 
     let hsm = start(&ctx, instance, model)?;
     hsm.start().await?;
@@ -359,7 +410,11 @@ async fn test_memory_management() -> Result<()> {
 
     let model = define(
         "MemoryMachine",
-        vec![state("allocating"), state("deallocating"), initial()],
+        vec![
+            state("allocating"),
+            state("deallocating"),
+            initial_with_target(target("allocating")),
+        ],
     );
 
     let hsm = start(&ctx, instance, model)?;
@@ -381,7 +436,13 @@ async fn test_event_data_handling() -> Result<()> {
     let instance = TestInstance::new();
     let ctx = Context::new();
 
-    let model = define("EventDataMachine", vec![state("processing"), initial()]);
+    let model = define(
+        "EventDataMachine",
+        vec![
+            state("processing"),
+            initial_with_target(target("processing")),
+        ],
+    );
 
     let hsm = start(&ctx, instance, model)?;
     hsm.start().await?;
@@ -405,7 +466,11 @@ async fn test_path_resolution() -> Result<()> {
 
     let model = define(
         "PathMachine",
-        vec![state("root"), state("child"), initial()],
+        vec![
+            state("root"),
+            state("child"),
+            initial_with_target(target("root")),
+        ],
     );
 
     let hsm = start(&ctx, instance, model)?;
@@ -433,7 +498,10 @@ async fn test_queue_behavior() -> Result<()> {
     let instance = TestInstance::new();
     let ctx = Context::new();
 
-    let model = define("QueueMachine", vec![state("receiver"), initial()]);
+    let model = define(
+        "QueueMachine",
+        vec![state("receiver"), initial_with_target(target("receiver"))],
+    );
 
     let hsm = start(&ctx, instance, model)?;
     hsm.start().await?;
@@ -470,7 +538,12 @@ async fn test_model_lifecycle() -> Result<()> {
     // Test full model lifecycle
     let model = define(
         "LifecycleMachine",
-        vec![state("start"), state("middle"), state("end"), initial()],
+        vec![
+            state("start"),
+            state("middle"),
+            state("end"),
+            initial_with_target(target("start")),
+        ],
     );
 
     // Validate the model

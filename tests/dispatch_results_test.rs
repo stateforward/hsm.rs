@@ -1,4 +1,4 @@
-use rust::*;
+use stateforward_hsm::*;
 
 #[derive(Debug)]
 struct ResultInstance;
@@ -42,6 +42,90 @@ async fn dispatch_completes_when_submitted_event_is_deferred() -> Result<()> {
     assert_eq!(hsm.state(), "/DeferredDispatchCompletionMachine/busy");
     hsm.dispatch(&ctx, Event::new("ready")).await?;
     assert_eq!(hsm.state(), "/DeferredDispatchCompletionMachine/done");
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn direct_dispatch_requires_started_machine() -> Result<()> {
+    let ctx = Context::new();
+    let model: Model<ResultInstance> = Define(
+        "InactiveDispatchMachine",
+        vec![
+            Initial(vec![Target("idle")]),
+            State("idle", vec![Transition(vec![On("go"), Target("../done")])]),
+            State("done", vec![]),
+        ],
+    );
+
+    let hsm = start(&ctx, ResultInstance, model)?;
+
+    let error = Dispatch(&ctx, &hsm, Event::new("go")).await.unwrap_err();
+    assert!(matches!(
+        error,
+        HsmError::Runtime(message) if message == "dispatch requires a started HSM"
+    ));
+    assert_eq!(hsm.state(), "/InactiveDispatchMachine");
+
+    hsm.start().await?;
+    Stop(&ctx, &hsm).await?;
+
+    let error = hsm.dispatch(&ctx, Event::new("go")).await.unwrap_err();
+    assert!(matches!(
+        error,
+        HsmError::Runtime(message) if message == "dispatch requires a started HSM"
+    ));
+    assert_eq!(hsm.state(), "/InactiveDispatchMachine");
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn package_dispatch_forwards_to_started_machine() -> Result<()> {
+    let ctx = Context::new();
+    let model: Model<ResultInstance> = Define(
+        "PackageDispatchMachine",
+        vec![
+            Initial(vec![Target("idle")]),
+            State("idle", vec![Transition(vec![On("go"), Target("../done")])]),
+            State("done", vec![]),
+        ],
+    );
+
+    let hsm = Started(&ctx, ResultInstance, model).await?;
+
+    Dispatch(&ctx, &hsm, Event::new("go")).await?;
+    assert_eq!(hsm.state(), "/PackageDispatchMachine/done");
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn borrowed_dispatch_matches_owned_dispatch_lifecycle() -> Result<()> {
+    let ctx = Context::new();
+    let model: Model<ResultInstance> = Define(
+        "BorrowedDispatchMachine",
+        vec![
+            Initial(vec![Target("idle")]),
+            State("idle", vec![Transition(vec![On("go"), Target("../done")])]),
+            State("done", vec![]),
+        ],
+    );
+
+    let hsm = start(&ctx, ResultInstance, model)?;
+
+    let error = hsm
+        .dispatch_borrowed(&ctx, Event::new("go"))
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        HsmError::Runtime(message) if message == "dispatch requires a started HSM"
+    ));
+
+    hsm.start().await?;
+    hsm.dispatch_borrowed(&ctx, Event::new("go")).await?;
+    assert_eq!(hsm.state(), "/BorrowedDispatchMachine/done");
 
     Ok(())
 }

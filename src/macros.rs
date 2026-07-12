@@ -27,6 +27,33 @@ macro_rules! state {
 }
 
 #[macro_export]
+macro_rules! submachine_state {
+    ($name:expr, $machine:expr $(,)?) => {{
+        let submachine = $crate::builder::PartialSubmachineState {
+            name: $name.to_string(),
+            machine: $machine,
+            elements: vec![],
+        };
+        Box::new(submachine) as Box<dyn $crate::builder::PartialElement<_>>
+    }};
+    ($name:expr, $machine:expr, $($element:expr),* $(,)?) => {{
+        let submachine = $crate::builder::PartialSubmachineState {
+            name: $name.to_string(),
+            machine: $machine,
+            elements: vec![$($element),*],
+        };
+        Box::new(submachine) as Box<dyn $crate::builder::PartialElement<_>>
+    }};
+}
+
+#[macro_export]
+macro_rules! SubmachineState {
+    ($($tt:tt)*) => {
+        $crate::submachine_state!($($tt)*)
+    };
+}
+
+#[macro_export]
 macro_rules! transition {
     ($($element:expr),* $(,)?) => {
         {
@@ -63,6 +90,13 @@ macro_rules! source {
 }
 
 #[macro_export]
+macro_rules! Source {
+    ($($tt:tt)*) => {
+        $crate::source!($($tt)*)
+    };
+}
+
+#[macro_export]
 macro_rules! target {
     ($name:expr) => {{
         let target = $crate::builder::PartialTarget {
@@ -77,7 +111,7 @@ macro_rules! on {
     ($event:expr) => {
         {
             let trigger = $crate::builder::PartialTrigger {
-                events: vec![$event.to_string()],
+                events: vec![$crate::event::IntoEventName::into_event_name($event)],
             };
             Box::new(trigger) as Box<dyn $crate::builder::PartialElement<_>>
         }
@@ -85,7 +119,7 @@ macro_rules! on {
     ($($event:expr),* $(,)?) => {
         {
             let trigger = $crate::builder::PartialTrigger {
-                events: vec![$($event.to_string()),*],
+                events: vec![$($crate::event::IntoEventName::into_event_name($event)),*],
             };
             Box::new(trigger) as Box<dyn $crate::builder::PartialElement<_>>
         }
@@ -133,6 +167,59 @@ macro_rules! effect {
         };
         Box::new(effect) as Box<dyn $crate::builder::PartialElement<_>>
     }};
+}
+
+#[macro_export]
+macro_rules! observe {
+    ($observer:expr) => {{
+        let observe = $crate::builder::PartialObserve {
+            observer: $observer,
+            targets: Vec::new(),
+        };
+        Box::new(observe) as Box<dyn $crate::builder::PartialElement<_>>
+    }};
+    ($observer:expr, $($target:expr),* $(,)?) => {{
+        let observe = $crate::builder::PartialObserve {
+            observer: $observer,
+            targets: vec![$($crate::builder::IntoObservationTarget::into_observation_target($target)),*],
+        };
+        Box::new(observe) as Box<dyn $crate::builder::PartialElement<_>>
+    }};
+}
+
+#[macro_export]
+macro_rules! Observe {
+    ($($tt:tt)*) => {
+        $crate::observe!($($tt)*)
+    };
+}
+
+#[macro_export]
+macro_rules! validator {
+    ($validator:expr) => {
+        $crate::builder::validator($validator)
+    };
+}
+
+#[macro_export]
+macro_rules! Validator {
+    ($($tt:tt)*) => {
+        $crate::validator!($($tt)*)
+    };
+}
+
+#[macro_export]
+macro_rules! finalizer {
+    ($finalizer:expr) => {
+        $crate::builder::finalizer($finalizer)
+    };
+}
+
+#[macro_export]
+macro_rules! Finalizer {
+    ($($tt:tt)*) => {
+        $crate::finalizer!($($tt)*)
+    };
 }
 
 #[macro_export]
@@ -283,6 +370,56 @@ macro_rules! choice {
 }
 
 #[macro_export]
+macro_rules! entry_point {
+    ($name:expr $(,)?) => {{
+        let entry_point = $crate::builder::PartialEntryPoint {
+            name: $name.to_string(),
+            elements: vec![],
+        };
+        Box::new(entry_point) as Box<dyn $crate::builder::PartialElement<_>>
+    }};
+    ($name:expr, $($element:expr),* $(,)?) => {{
+        let entry_point = $crate::builder::PartialEntryPoint {
+            name: $name.to_string(),
+            elements: vec![$($element),*],
+        };
+        Box::new(entry_point) as Box<dyn $crate::builder::PartialElement<_>>
+    }};
+}
+
+#[macro_export]
+macro_rules! exit_point {
+    ($name:expr $(,)?) => {{
+        let exit_point = $crate::builder::PartialExitPoint {
+            name: $name.to_string(),
+            elements: vec![],
+        };
+        Box::new(exit_point) as Box<dyn $crate::builder::PartialElement<_>>
+    }};
+    ($name:expr, $($element:expr),* $(,)?) => {{
+        let exit_point = $crate::builder::PartialExitPoint {
+            name: $name.to_string(),
+            elements: vec![$($element),*],
+        };
+        Box::new(exit_point) as Box<dyn $crate::builder::PartialElement<_>>
+    }};
+}
+
+#[macro_export]
+macro_rules! EntryPoint {
+    ($($tt:tt)*) => {
+        $crate::entry_point!($($tt)*)
+    };
+}
+
+#[macro_export]
+macro_rules! ExitPoint {
+    ($($tt:tt)*) => {
+        $crate::exit_point!($($tt)*)
+    };
+}
+
+#[macro_export]
 macro_rules! shallow_history {
     ($name:expr $(,)?) => {
         {
@@ -369,7 +506,7 @@ macro_rules! defer {
     ($($event:expr),* $(,)?) => {
         {
             let defer = $crate::builder::PartialDefer {
-                events: vec![$($event.to_string()),*],
+                events: vec![$($crate::event::IntoEventName::into_event_name($event)),*],
             };
             Box::new(defer) as Box<dyn $crate::builder::PartialElement<_>>
         }

@@ -1,4 +1,4 @@
-use rust::*;
+use stateforward_hsm::*;
 /**
  * @fileoverview Test choice pseudostates
  * Tests dynamic branching based on runtime conditions using choice pseudostates
@@ -702,7 +702,8 @@ async fn test_choice_with_side_effects_in_guards() -> Result<()> {
             "choice",
             transition!(guard!(guard1), target!("path1")),
             transition!(guard!(guard2), target!("path2"), effect!(path2_effect)),
-            transition!(guard!(guard3), target!("path3"))
+            transition!(guard!(guard3), target!("path3")),
+            transition!(target!("path3"))
         ),
         state!("path1"),
         state!("path2"),
@@ -710,7 +711,7 @@ async fn test_choice_with_side_effects_in_guards() -> Result<()> {
     );
 
     let hsm = start(&ctx, instance, model)?;
-    hsm.start().await;
+    hsm.start().await?;
 
     // Should take path2 which has effect
     let instance = hsm.instance().read().unwrap();

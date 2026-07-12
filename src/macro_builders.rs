@@ -3,9 +3,9 @@
 use crate::builder::PartialElement;
 use crate::builder::*;
 use crate::element::{
-    ActivityFn, DurationFn, EffectFn, EntryFn, ExitFn, GuardFn, Instance, TimepointFn,
+    ActivityFn, DurationFn, EffectFn, EntryFn, ExitFn, GuardFn, Instance, ModelFinalizer,
+    ModelValidator, OperationFn, TimepointFn,
 };
-use std::time::Duration;
 
 /// Create a state element
 pub fn create_state<T: Instance + 'static>(
@@ -85,6 +85,13 @@ pub fn create_trigger<T: Instance + 'static>(event: &str) -> Box<dyn PartialElem
     })
 }
 
+/// Create a source element
+pub fn create_source<T: Instance + 'static>(path: &str) -> Box<dyn PartialElement<T>> {
+    Box::new(PartialSource {
+        source: path.to_string(),
+    })
+}
+
 /// Create a target element
 pub fn create_target<T: Instance + 'static>(path: &str) -> Box<dyn PartialElement<T>> {
     Box::new(PartialTarget {
@@ -111,6 +118,30 @@ pub fn create_effect<T: Instance + 'static>(action: EffectFn<T>) -> Box<dyn Part
     Box::new(PartialEffect {
         operations: vec![action],
     })
+}
+
+/// Create an observation element
+pub fn create_observe<T: Instance + 'static>(
+    observer: OperationFn<T>,
+    targets: Vec<String>,
+) -> Box<dyn PartialElement<T>> {
+    Box::new(PartialObserve { observer, targets })
+}
+
+pub fn create_validator<T, V>(validator: V) -> Box<dyn PartialElement<T>>
+where
+    T: Instance + 'static,
+    V: ModelValidator<T> + 'static,
+{
+    crate::builder::validator(validator)
+}
+
+pub fn create_finalizer<T, F>(finalizer: F) -> Box<dyn PartialElement<T>>
+where
+    T: Instance + 'static,
+    F: ModelFinalizer<T> + 'static,
+{
+    crate::builder::finalizer(finalizer)
 }
 
 /// Create a guard element

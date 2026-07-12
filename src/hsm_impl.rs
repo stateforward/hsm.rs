@@ -1,125 +1,185 @@
 // HSM Implementation
 
 use std::any::Any;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::future::Future;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::pin::Pin;
-use std::sync::{Arc, Mutex, RwLock, atomic::AtomicBool};
-use std::time::Duration;
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
+use std::task::{Context as TaskContext, Poll};
+use std::time::{Duration, SystemTime};
 
+use crate::behavior_context;
 use crate::context::Context;
-use crate::element::{AttributeValue, Behavior, Element, ElementVariant, Instance, State};
-use crate::error::Result;
-use crate::event::{Event, initial_event};
+use crate::context_runtime::{
+    ContextMachine, register_context_machine, unregister_context_machine,
+};
+use crate::element::{
+    AttributeValue, Behavior, BehaviorOperation, Element, ElementVariant, Instance, OperationFn,
+    State,
+};
+use crate::error::{HsmError, Result};
+use crate::event::{
+    ANY_EVENT_NAME, AttributeChange, Event, call_trigger_name, final_event, initial_event,
+};
 use crate::kind::{self, is_kind};
 use crate::model::Model;
 use crate::queue::EventQueue;
+use crate::runtime::{
+    AttributeGetTarget, AttributeSetTarget, Clock, DispatchTarget, EventDetail,
+    OperationCallTarget, RestartDataTarget, RestartTarget, RuntimeConfig, RuntimeIdentityTarget,
+    Snapshot, SnapshotTarget, StartDataTarget, StopTarget, TransitionDetail,
+};
 
-pub type SleepFn = Arc<dyn Fn(Duration) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
-// Queue hooks are intentionally synchronous: Push, Pop, and Len must return
-// their result/error directly to the runtime, not a future or channel.
-pub type QueuePushFn = Arc<dyn Fn(&Context, Event) -> Result<()> + Send + Sync>;
-pub type QueuePopFn = Arc<dyn Fn(&Context) -> Result<Option<Event>> + Send + Sync>;
-pub type QueueLenFn = Arc<dyn Fn(&Context) -> Result<usize> + Send + Sync>;
-
-const PROCESSED_RESULT: u8 = 1;
-const DEFERRED_RESULT: u8 = 2;
-
-#[allow(non_snake_case)]
-#[derive(Clone, Default)]
-pub struct Clock {
-    pub Sleep: Option<SleepFn>,
-}
-
-impl Clock {
-    pub fn with_defaults(&self) -> Self {
-        let sleep = self.Sleep.clone().unwrap_or_else(default_sleep_fn);
-        Self { Sleep: Some(sleep) }
-    }
-
-    pub fn sleep(&self, duration: Duration) -> Pin<Box<dyn Future<Output = ()> + Send>> {
-        let sleep = self.Sleep.clone().unwrap_or_else(default_sleep_fn);
-        sleep(duration)
-    }
-
-    #[allow(non_snake_case)]
-    pub fn Sleep(&self, duration: Duration) -> Pin<Box<dyn Future<Output = ()> + Send>> {
-        self.sleep(duration)
-    }
-}
-
-fn default_sleep_fn() -> SleepFn {
-    Arc::new(|duration| Box::pin(tokio::time::sleep(duration)))
-}
-
-pub fn default_clock() -> Clock {
-    Clock::default().with_defaults()
-}
-
-#[allow(non_snake_case)]
-pub fn DefaultClock() -> Clock {
-    default_clock()
-}
-
-#[allow(non_snake_case)]
 #[derive(Clone)]
-pub struct RuntimeQueue {
-    pub Push: QueuePushFn,
-    pub Pop: QueuePopFn,
-    pub Len: QueueLenFn,
+struct DeferredEvent {
+    event: Event,
+    owner: String,
 }
 
-impl RuntimeQueue {
-    pub fn new(push: QueuePushFn, pop: QueuePopFn, len: QueueLenFn) -> Self {
-        Self {
-            Push: push,
-            Pop: pop,
-            Len: len,
+enum EventOutcome {
+    Processed,
+    Deferred,
+    Transition { source: String },
+}
+
+type TransitionOutcome = std::result::Result<Option<String>, HsmError>;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TimerKind {
+    After,
+    At,
+    Every,
+}
+
+struct BehaviorFuture {
+    future: Pin<Box<dyn Future<Output = ()> + Send>>,
+}
+
+impl Future for BehaviorFuture {
+    type Output = bool;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut TaskContext<'_>) -> Poll<Self::Output> {
+        match catch_unwind(AssertUnwindSafe(|| self.future.as_mut().poll(cx))) {
+            Ok(Poll::Ready(())) => Poll::Ready(true),
+            Ok(Poll::Pending) => Poll::Pending,
+            Err(_) => Poll::Ready(false),
         }
     }
+}
 
-    pub fn push(&self, ctx: &Context, event: Event) -> Result<()> {
-        (self.Push)(ctx, event)
+async fn await_behavior_future(future: Pin<Box<dyn Future<Output = ()> + Send>>) -> bool {
+    BehaviorFuture { future }.await && !behavior_context::take_abort()
+}
+
+fn event_names(event: &Event) -> Vec<String> {
+    let mut names = vec![event.name.clone()];
+    if kind::is_kind(event.kind, kind::CALL_EVENT) {
+        names.push(call_trigger_name(&event.name));
     }
+    names
+}
 
-    pub fn pop(&self, ctx: &Context) -> Result<Option<Event>> {
-        (self.Pop)(ctx)
-    }
+fn snapshot_event_name(name: &str) -> String {
+    name.strip_prefix("hsm_call:").unwrap_or(name).to_string()
+}
 
-    pub fn len(&self, ctx: &Context) -> Result<usize> {
-        (self.Len)(ctx)
+fn snapshot_event_kind(name: &str) -> kind::KindValue {
+    if name.starts_with("hsm_call:") {
+        kind::CALL_EVENT
+    } else {
+        kind::EVENT
     }
 }
 
-#[allow(non_snake_case)]
-#[derive(Clone, Default)]
-pub struct RuntimeConfig {
-    pub ID: Option<String>,
-    pub Name: Option<String>,
-    pub Data: Option<Arc<dyn Any + Send + Sync>>,
-    pub Clock: Option<Clock>,
-    pub Queue: Option<RuntimeQueue>,
+fn default_attribute_values<T: Instance>(model: &Model<T>) -> HashMap<String, AttributeValue> {
+    let mut attributes = HashMap::new();
+    for (name, attribute) in &model.attributes {
+        if let Some(default_value) = &attribute.default_value {
+            attributes.insert(name.clone(), default_value.clone());
+        }
+    }
+    attributes
 }
 
-#[allow(non_snake_case)]
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EventDetail {
-    pub Name: String,
-    pub Kind: kind::KindValue,
-    pub Target: Option<String>,
-    pub Guard: bool,
-    pub Schema: Option<AttributeValue>,
+static ACTIVE_DRAINS: OnceLock<Mutex<HashSet<usize>>> = OnceLock::new();
+
+fn active_drains() -> &'static Mutex<HashSet<usize>> {
+    ACTIVE_DRAINS.get_or_init(|| Mutex::new(HashSet::new()))
 }
 
-#[allow(non_snake_case)]
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Snapshot {
-    pub ID: String,
-    pub QualifiedName: String,
-    pub State: String,
-    pub Attributes: HashMap<String, AttributeValue>,
-    pub QueueLen: usize,
-    pub Events: Vec<EventDetail>,
+static PENDING_REENTRANT_EVENTS: OnceLock<Mutex<HashMap<usize, VecDeque<(Context, Event)>>>> =
+    OnceLock::new();
+
+fn pending_reentrant_events() -> &'static Mutex<HashMap<usize, VecDeque<(Context, Event)>>> {
+    PENDING_REENTRANT_EVENTS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+static ACTIVE_OPERATIONS: OnceLock<Mutex<HashMap<usize, usize>>> = OnceLock::new();
+
+fn active_operations() -> &'static Mutex<HashMap<usize, usize>> {
+    ACTIVE_OPERATIONS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+static ACTIVE_ACTIVITIES: OnceLock<Mutex<HashMap<usize, Vec<String>>>> = OnceLock::new();
+
+fn active_activities() -> &'static Mutex<HashMap<usize, Vec<String>>> {
+    ACTIVE_ACTIVITIES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn register_activity(ctx: &Context, behavior: &str) {
+    active_activities()
+        .lock()
+        .unwrap()
+        .entry(ctx.registry_key())
+        .or_default()
+        .push(behavior.to_string());
+}
+
+fn is_active_activity(ctx: &Context, behavior: &str) -> bool {
+    active_activities()
+        .lock()
+        .unwrap()
+        .get(&ctx.registry_key())
+        .is_some_and(|activities| activities.iter().any(|active| active == behavior))
+}
+
+fn finish_activity(ctx: &Context, behavior: &str) -> bool {
+    let mut active = active_activities().lock().unwrap();
+    let Some(activities) = active.get_mut(&ctx.registry_key()) else {
+        return false;
+    };
+    let Some(index) = activities.iter().position(|active| active == behavior) else {
+        return false;
+    };
+    activities.remove(index);
+    if activities.is_empty() {
+        active.remove(&ctx.registry_key());
+    }
+    true
+}
+
+fn cancel_activities(ctx: &Context) -> Vec<String> {
+    active_activities()
+        .lock()
+        .unwrap()
+        .remove(&ctx.registry_key())
+        .unwrap_or_default()
+}
+
+fn running_activity(ctx: &Context) -> Option<String> {
+    behavior_context::current_activity(ctx)
+}
+
+struct DrainGuard {
+    key: usize,
+}
+
+impl Drop for DrainGuard {
+    fn drop(&mut self) {
+        active_drains().lock().unwrap().remove(&self.key);
+        pending_reentrant_events().lock().unwrap().remove(&self.key);
+    }
 }
 
 pub struct HSM<T: Instance> {
@@ -127,11 +187,10 @@ pub struct HSM<T: Instance> {
     instance: Arc<RwLock<T>>,
     current_state: Arc<RwLock<String>>,
     queue: Arc<Mutex<EventQueue>>,
-    deferred_events: Arc<Mutex<VecDeque<Event>>>,
+    deferred_events: Arc<Mutex<VecDeque<DeferredEvent>>>,
     shallow_history: Arc<Mutex<HashMap<String, String>>>,
     deep_history: Arc<Mutex<HashMap<String, String>>>,
     attributes: Arc<Mutex<HashMap<String, AttributeValue>>>,
-    processing: Arc<AtomicBool>,
     context: Arc<Context>,
     clock: Clock,
     id: String,
@@ -145,7 +204,16 @@ impl<T: Instance> HSM<T> {
         Self::new_with_config(instance, model, RuntimeConfig::default())
     }
 
-    pub fn new_with_config(instance: T, mut model: Model<T>, config: RuntimeConfig) -> Self {
+    pub fn new_with_config(instance: T, model: Model<T>, config: RuntimeConfig) -> Self {
+        Self::new_with_config_and_context(instance, model, config, Context::new())
+    }
+
+    pub(crate) fn new_with_config_and_context(
+        instance: T,
+        mut model: Model<T>,
+        config: RuntimeConfig,
+        context: Context,
+    ) -> Self {
         if model.history_updates.is_empty() {
             model.build_history_table();
         }
@@ -158,7 +226,7 @@ impl<T: Instance> HSM<T> {
             .clone()
             .unwrap_or_else(|| model.state.qualified_name().to_string());
         let id = config.ID.clone().unwrap_or_default();
-        let context = Arc::new(Context::new());
+        let context = Arc::new(context);
         let clock = config.Clock.clone().unwrap_or_default().with_defaults();
         let queue = config
             .Queue
@@ -166,12 +234,7 @@ impl<T: Instance> HSM<T> {
             .map(EventQueue::with_regular_queue)
             .unwrap_or_else(EventQueue::new);
 
-        let mut attributes = HashMap::new();
-        for (name, attribute) in &model.attributes {
-            if let Some(default_value) = &attribute.default_value {
-                attributes.insert(name.clone(), default_value.clone());
-            }
-        }
+        let attributes = default_attribute_values(&model);
 
         Self {
             model,
@@ -182,7 +245,6 @@ impl<T: Instance> HSM<T> {
             shallow_history: Arc::new(Mutex::new(HashMap::new())),
             deep_history: Arc::new(Mutex::new(HashMap::new())),
             attributes: Arc::new(Mutex::new(attributes)),
-            processing: Arc::new(AtomicBool::new(false)),
             context,
             clock,
             id,
@@ -192,10 +254,141 @@ impl<T: Instance> HSM<T> {
         }
     }
 
+    fn start_with_runtime_data(
+        &self,
+        data: Option<Arc<dyn Any + Send + Sync>>,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
+        let hsm = self.clone();
+        Box::pin(async move {
+            crate::validate(&hsm.model)?;
+
+            if hsm.state() != hsm.model.state.qualified_name() {
+                return Err(HsmError::Validation("already started HSM".to_string()));
+            }
+
+            *hsm.attributes.lock().unwrap() = default_attribute_values(&hsm.model);
+            register_context_machine(&hsm.context, &hsm);
+            let mut initial_event = initial_event();
+            initial_event.data = data.or_else(|| hsm.data.clone());
+            if let Err(error) = hsm.dispatch_queued(&hsm.context, initial_event).await {
+                unregister_context_machine(&hsm.context, &hsm);
+                return Err(error);
+            }
+            Ok(())
+        })
+    }
+
     pub fn start(&self) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
-        let mut initial_event = initial_event();
-        initial_event.data = self.data.clone();
-        self.dispatch(&self.context, initial_event)
+        self.start_with_runtime_data(None)
+    }
+
+    pub fn start_with_data<D>(&self, data: D) -> Pin<Box<dyn Future<Output = Result<()>> + Send>>
+    where
+        D: Any + Send + Sync + 'static,
+    {
+        self.start_with_runtime_data(Some(Arc::new(data)))
+    }
+
+    #[allow(non_snake_case)]
+    pub fn StartWithData<D>(&self, data: D) -> Pin<Box<dyn Future<Output = Result<()>> + Send>>
+    where
+        D: Any + Send + Sync + 'static,
+    {
+        self.start_with_data(data)
+    }
+
+    pub fn stop(&self, ctx: &Context) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
+        let hsm = self.clone();
+        let ctx = ctx.clone();
+        Box::pin(async move {
+            if ctx.is_cancelled() {
+                return Ok(());
+            }
+
+            let current_state = hsm.current_state.read().unwrap().clone();
+            let root = hsm.model.state.qualified_name().to_string();
+            if current_state == root {
+                return Ok(());
+            }
+
+            register_context_machine(&ctx, &hsm);
+            let event = Event::completion("hsm_stop");
+            for state_name in hsm.active_exit_path(&current_state) {
+                if let Some(state) = hsm.model.get_state(&state_name).cloned() {
+                    hsm.exit_state(&state, &event, &ctx).await;
+                }
+            }
+
+            hsm.queue.lock().unwrap().clear_with_context(&ctx);
+            hsm.deferred_events.lock().unwrap().clear();
+            hsm.shallow_history.lock().unwrap().clear();
+            hsm.deep_history.lock().unwrap().clear();
+            hsm.state_contexts.write().unwrap().clear();
+            *hsm.current_state.write().unwrap() = root;
+            unregister_context_machine(&hsm.context, &hsm);
+            if ctx.registry_key() != hsm.context.registry_key() {
+                unregister_context_machine(&ctx, &hsm);
+            }
+            Ok(())
+        })
+    }
+
+    #[allow(non_snake_case)]
+    pub fn Stop(&self, ctx: &Context) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
+        self.stop(ctx)
+    }
+
+    pub fn restart(&self, ctx: &Context) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
+        self.restart_with_runtime_data(ctx, None)
+    }
+
+    fn restart_with_runtime_data(
+        &self,
+        ctx: &Context,
+        data: Option<Arc<dyn Any + Send + Sync>>,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
+        let hsm = self.clone();
+        let ctx = ctx.clone();
+        Box::pin(async move {
+            let current_state = hsm.current_state.read().unwrap().clone();
+            let root = hsm.model.state.qualified_name().to_string();
+            if current_state == root {
+                return Err(HsmError::Validation(
+                    "restart requires a started HSM".to_string(),
+                ));
+            }
+
+            hsm.stop(&ctx).await?;
+            hsm.start_with_runtime_data(data).await
+        })
+    }
+
+    pub fn restart_with_data<D>(
+        &self,
+        ctx: &Context,
+        data: D,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>>
+    where
+        D: Any + Send + Sync + 'static,
+    {
+        self.restart_with_runtime_data(ctx, Some(Arc::new(data)))
+    }
+
+    #[allow(non_snake_case)]
+    pub fn Restart(&self, ctx: &Context) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
+        self.restart(ctx)
+    }
+
+    #[allow(non_snake_case)]
+    pub fn RestartWithData<D>(
+        &self,
+        ctx: &Context,
+        data: D,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>>
+    where
+        D: Any + Send + Sync + 'static,
+    {
+        self.restart_with_data(ctx, data)
     }
 
     pub fn state(&self) -> String {
@@ -204,6 +397,10 @@ impl<T: Instance> HSM<T> {
 
     pub fn current_state(&self) -> String {
         self.current_state.read().unwrap().clone()
+    }
+
+    pub fn is_started(&self) -> bool {
+        self.state() != self.model.state.qualified_name()
     }
 
     pub fn context(&self) -> &Context {
@@ -255,20 +452,28 @@ impl<T: Instance> HSM<T> {
         self.data()
     }
 
-    pub fn take_snapshot(&self) -> Snapshot {
+    pub fn take_snapshot(&self) -> Result<Snapshot> {
         let state = self.state();
+        if state == self.model.state.qualified_name() && !self.is_draining() {
+            return Err(HsmError::Runtime(
+                "take snapshot requires a started HSM".to_string(),
+            ));
+        }
+
         let attributes = self.attributes.lock().unwrap().clone();
         let queue_len = self.queue.lock().unwrap().len_with_context(&self.context);
         let transitions_by_event = self.model.transition_map.get(&state);
         let mut events = Vec::new();
+        let mut transitions = Vec::new();
+        let mut seen_transitions = HashSet::new();
 
         if let Some(transitions_by_event) = transitions_by_event {
             for (event_name, transition_names) in transitions_by_event {
                 for transition_name in transition_names {
                     if let Some(transition) = self.model.get_transition(transition_name) {
                         events.push(EventDetail {
-                            Name: event_name.clone(),
-                            Kind: kind::EVENT,
+                            Name: snapshot_event_name(event_name),
+                            Kind: snapshot_event_kind(event_name),
                             Target: if transition.target.is_empty() {
                                 None
                             } else {
@@ -277,23 +482,42 @@ impl<T: Instance> HSM<T> {
                             Guard: !transition.guard.is_empty(),
                             Schema: None,
                         });
+                        if seen_transitions.insert(transition_name.clone()) {
+                            transitions.push(TransitionDetail {
+                                Name: transition.qualified_name().to_string(),
+                                Kind: transition.kind(),
+                                Source: transition.source.clone(),
+                                Target: if transition.target.is_empty() {
+                                    None
+                                } else {
+                                    Some(transition.target.clone())
+                                },
+                                Events: transition
+                                    .events
+                                    .iter()
+                                    .map(|event| snapshot_event_name(event))
+                                    .collect(),
+                                Guard: !transition.guard.is_empty(),
+                            });
+                        }
                     }
                 }
             }
         }
 
-        Snapshot {
+        Ok(Snapshot {
             ID: self.id(),
             QualifiedName: self.qualified_name(),
             State: state,
             Attributes: attributes,
             QueueLen: queue_len,
+            Transitions: transitions,
             Events: events,
-        }
+        })
     }
 
     #[allow(non_snake_case)]
-    pub fn TakeSnapshot(&self) -> Snapshot {
+    pub fn TakeSnapshot(&self) -> Result<Snapshot> {
         self.take_snapshot()
     }
 
@@ -302,7 +526,7 @@ impl<T: Instance> HSM<T> {
         &self.instance
     }
 
-    pub fn instance_mut(&self) -> std::sync::RwLockWriteGuard<T> {
+    pub fn instance_mut(&self) -> std::sync::RwLockWriteGuard<'_, T> {
         self.instance.write().unwrap()
     }
 
@@ -327,43 +551,73 @@ impl<T: Instance> HSM<T> {
         self.get(name)
     }
 
-    pub fn set<V: Into<AttributeValue>>(&self, name: &str, value: V) {
+    pub fn set<V: Into<AttributeValue>>(&self, name: &str, value: V) -> Result<()> {
+        self.set_with_context(&self.context, name, value)
+    }
+
+    fn set_with_context<V: Into<AttributeValue>>(
+        &self,
+        ctx: &Context,
+        name: &str,
+        value: V,
+    ) -> Result<()> {
+        if self.state() == self.model.state.qualified_name() && !self.is_draining() {
+            return Err(HsmError::Runtime("set requires a started HSM".to_string()));
+        }
+
         let qualified_name = self.qualify_attribute_name(name);
         let Some(attribute) = self.model.get_attribute(&qualified_name) else {
-            return;
+            return Err(HsmError::Runtime(format!(
+                "missing attribute \"{}\"",
+                qualified_name
+            )));
         };
         let value = value.into();
         if let Some(expected_type) = &attribute.value_type {
             if &value.value_type() != expected_type {
-                return;
+                return Err(HsmError::Runtime(format!(
+                    "attribute \"{}\" rejected value",
+                    qualified_name
+                )));
             }
         }
 
-        {
+        let old_value = {
             let mut attributes = self.attributes.lock().unwrap();
-            if attributes.get(&qualified_name) == Some(&value) {
-                return;
+            let old_value = attributes.get(&qualified_name).cloned();
+            if old_value.as_ref() == Some(&value) {
+                return Ok(());
             }
             attributes.insert(qualified_name.clone(), value.clone());
-        }
+            old_value
+        };
 
         let event = Event {
-            kind: kind::EVENT,
+            kind: kind::CHANGE_EVENT,
             qualified_name: qualified_name.clone(),
-            name: qualified_name,
-            data: None,
+            name: qualified_name.clone(),
+            data: Some(Arc::new(AttributeChange {
+                Name: qualified_name,
+                Old: old_value,
+                Value: value,
+            })),
         };
+        if running_activity(ctx).is_some() {
+            self.queue_reentrant_event(ctx, event);
+            return Ok(());
+        }
         {
             let mut queue = self.queue.lock().unwrap();
-            if queue.push_with_context(&self.context, event).is_err() {
-                return;
+            if queue.push_with_context(ctx, event).is_err() {
+                return Ok(());
             }
         }
-        self.run_to_completion(&self.context);
+        self.run_to_completion(ctx);
+        Ok(())
     }
 
     #[allow(non_snake_case)]
-    pub fn Set<V: Into<AttributeValue>>(&self, name: &str, value: V) {
+    pub fn Set<V: Into<AttributeValue>>(&self, name: &str, value: V) -> Result<()> {
         self.set(name, value)
     }
 
@@ -372,13 +626,55 @@ impl<T: Instance> HSM<T> {
         ctx: &Context,
         name: &str,
     ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
+        self.call_with_args(ctx, name, Vec::new())
+    }
+
+    pub fn call_with_args(
+        &self,
+        ctx: &Context,
+        name: &str,
+        args: Vec<Arc<dyn Any + Send + Sync>>,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
+        if self.state() == self.model.state.qualified_name() && !self.is_draining() {
+            return Box::pin(async {
+                Err(HsmError::Runtime(
+                    "operation requires a started HSM".to_string(),
+                ))
+            });
+        }
+
+        if name.is_empty() {
+            return Box::pin(async {
+                Err(HsmError::Runtime(
+                    "operation name cannot be empty".to_string(),
+                ))
+            });
+        }
+
         let operation_name = self.qualify_operation_name(name);
-        let event = Event::call(operation_name.clone());
+        let Some(operation) = self.model.get_operation(&operation_name) else {
+            let name = name.to_string();
+            return Box::pin(async move {
+                Err(HsmError::Runtime(format!("missing operation \"{name}\"")))
+            });
+        };
+        if operation.action.is_none() {
+            let name = name.to_string();
+            return Box::pin(async move {
+                Err(HsmError::Runtime(format!("missing operation \"{name}\"")))
+            });
+        }
+
+        let event = Event::call_with_args(operation_name.clone(), args);
         let hsm = self.clone();
         let ctx = ctx.clone();
         Box::pin(async move {
-            hsm.execute_operation_by_name(&operation_name, &event, &ctx)
-                .await;
+            if !hsm
+                .execute_operation_by_name(&operation_name, &event, &ctx)
+                .await
+            {
+                return Ok(());
+            }
             hsm.dispatch(&ctx, event).await
         })
     }
@@ -390,6 +686,16 @@ impl<T: Instance> HSM<T> {
         name: &str,
     ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
         self.call(ctx, name)
+    }
+
+    #[allow(non_snake_case)]
+    pub fn CallWithArgs(
+        &self,
+        ctx: &Context,
+        name: &str,
+        args: Vec<Arc<dyn Any + Send + Sync>>,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
+        self.call_with_args(ctx, name, args)
     }
 
     fn qualify_attribute_name(&self, name: &str) -> String {
@@ -408,12 +714,132 @@ impl<T: Instance> HSM<T> {
         }
     }
 
+    fn drain_key(&self) -> usize {
+        Arc::as_ptr(&self.queue) as usize
+    }
+
+    fn begin_drain(&self) -> Option<DrainGuard> {
+        let key = self.drain_key();
+        let mut active = active_drains().lock().unwrap();
+        if active.contains(&key) {
+            return None;
+        }
+        active.insert(key);
+        Some(DrainGuard { key })
+    }
+
+    fn is_draining(&self) -> bool {
+        active_drains().lock().unwrap().contains(&self.drain_key())
+    }
+
+    fn begin_operation(&self) {
+        let mut active = active_operations().lock().unwrap();
+        *active.entry(self.drain_key()).or_insert(0) += 1;
+    }
+
+    fn end_operation(&self) -> bool {
+        let key = self.drain_key();
+        let mut active = active_operations().lock().unwrap();
+        let Some(depth) = active.get_mut(&key) else {
+            return true;
+        };
+        *depth -= 1;
+        if *depth == 0 {
+            active.remove(&key);
+            return true;
+        }
+        false
+    }
+
+    fn is_operation_active(&self) -> bool {
+        active_operations()
+            .lock()
+            .unwrap()
+            .contains_key(&self.drain_key())
+    }
+
+    fn queue_reentrant_event(&self, ctx: &Context, event: Event) {
+        pending_reentrant_events()
+            .lock()
+            .unwrap()
+            .entry(self.drain_key())
+            .or_default()
+            .push_back((ctx.clone(), event));
+    }
+
+    fn flush_reentrant_events(&self, fallback_ctx: &Context) -> Result<bool> {
+        let events = pending_reentrant_events()
+            .lock()
+            .unwrap()
+            .remove(&self.drain_key());
+        let Some(mut events) = events else {
+            return Ok(false);
+        };
+
+        let mut queue = self.queue.lock().unwrap();
+        while let Some((ctx, event)) = events.pop_front() {
+            if queue.push_with_context(&ctx, event).is_err() {
+                let _ = queue.push_with_context(fallback_ctx, Event::error_event());
+            }
+        }
+        Ok(true)
+    }
+
     // Dispatch following exact signature: hsm.dispatch(ctx, Event)
     pub fn dispatch(
         &self,
         ctx: &Context,
         event: Event,
     ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
+        if self.state() == self.model.state.qualified_name() && !self.is_draining() {
+            return Box::pin(async {
+                Err(HsmError::Runtime(
+                    "dispatch requires a started HSM".to_string(),
+                ))
+            });
+        }
+
+        self.dispatch_queued(ctx, event)
+    }
+
+    /// Dispatches an event while borrowing the machine and context for the
+    /// returned future. This has the same queue and lifecycle semantics as
+    /// [`Self::dispatch`], without cloning either value into that future.
+    pub fn dispatch_borrowed<'a>(
+        &'a self,
+        ctx: &'a Context,
+        event: Event,
+    ) -> impl Future<Output = Result<()>> + Send + 'a {
+        async move {
+            if self.state() == self.model.state.qualified_name() && !self.is_draining() {
+                return Err(HsmError::Runtime(
+                    "dispatch requires a started HSM".to_string(),
+                ));
+            }
+
+            self.dispatch_queued_borrowed(ctx, event).await
+        }
+    }
+
+    fn dispatch_queued(
+        &self,
+        ctx: &Context,
+        event: Event,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
+        let hsm = self.clone();
+        let ctx = ctx.clone();
+        Box::pin(async move { hsm.dispatch_queued_borrowed(&ctx, event).await })
+    }
+
+    async fn dispatch_queued_borrowed(&self, ctx: &Context, event: Event) -> Result<()> {
+        if kind::is_kind(event.kind, kind::CALL_EVENT)
+            && running_activity(ctx).is_none()
+            && (self.is_draining() || self.is_operation_active())
+        {
+            self.queue_reentrant_event(ctx, event);
+            return Ok(());
+        }
+
         {
             let mut queue = self.queue.lock().unwrap();
             if queue.push_with_context(ctx, event).is_err() {
@@ -421,12 +847,7 @@ impl<T: Instance> HSM<T> {
             }
         }
 
-        let hsm = self.clone();
-        let ctx = ctx.clone();
-        Box::pin(async move {
-            hsm.drain_queue(&ctx).await;
-            Ok(())
-        })
+        self.drain_queue(ctx).await
     }
 
     fn run_to_completion(&self, ctx: &Context) {
@@ -438,7 +859,7 @@ impl<T: Instance> HSM<T> {
                 .build()
             {
                 runtime.block_on(async move {
-                    hsm.drain_queue(&ctx).await;
+                    let _ = hsm.drain_queue(&ctx).await;
                 });
             }
         };
@@ -450,7 +871,32 @@ impl<T: Instance> HSM<T> {
         }
     }
 
-    async fn drain_queue(&self, ctx: &Context) {
+    fn active_exit_path(&self, current_state: &str) -> Vec<String> {
+        let root = self.model.state.qualified_name();
+        let mut path = Vec::new();
+        let mut current = current_state.to_string();
+
+        while !current.is_empty() && current != root {
+            if self.model.get_state(&current).is_some() {
+                path.push(current.clone());
+            }
+
+            let parent = crate::path::dirname(&current);
+            if parent == current {
+                break;
+            }
+            current = parent.to_string();
+        }
+
+        path
+    }
+
+    async fn drain_queue(&self, ctx: &Context) -> Result<()> {
+        register_context_machine(ctx, self);
+        let Some(_guard) = self.begin_drain() else {
+            return Ok(());
+        };
+        let mut deferred_events = Vec::new();
         loop {
             let event_result = {
                 let mut queue = self.queue.lock().unwrap();
@@ -459,75 +905,304 @@ impl<T: Instance> HSM<T> {
 
             match event_result {
                 Ok(Some(event)) => {
-                    self.process_single_event(event, ctx).await;
+                    if let Some(deferred) = self.take_deferred_event(&event) {
+                        let current_state = self.current_state.read().unwrap().clone();
+                        if self.deferred_owner_still_active(&deferred.owner, &current_state) {
+                            deferred_events.push(deferred);
+                            continue;
+                        }
+                    }
+
+                    match self.process_single_event(&event, ctx).await? {
+                        EventOutcome::Deferred => {
+                            if let Some(owner) = self.deferred_owner(&event) {
+                                deferred_events.push(DeferredEvent { event, owner });
+                            }
+                        }
+                        EventOutcome::Transition { source } => {
+                            self.requeue_deferred_events(ctx, &mut deferred_events, &source);
+                        }
+                        EventOutcome::Processed => {}
+                    }
                 }
                 Ok(None) => break,
                 Err(_) => {
-                    self.process_single_event(Event::error_event(), ctx).await;
-                    break;
+                    let event = Event::error_event();
+                    if let EventOutcome::Transition { source } =
+                        self.process_single_event(&event, ctx).await?
+                    {
+                        self.requeue_deferred_events(ctx, &mut deferred_events, &source);
+                    }
                 }
             };
+            self.flush_reentrant_events(ctx)?;
         }
+        self.requeue_all_deferred_events(ctx, &mut deferred_events);
+        Ok(())
     }
 
-    async fn process_single_event(&self, event: Event, ctx: &Context) -> u8 {
+    async fn process_single_event(&self, event: &Event, ctx: &Context) -> Result<EventOutcome> {
         let current_state = self.current_state.read().unwrap().clone();
 
-        if self.is_deferred_in_state(&current_state, &event.name) {
-            self.deferred_events.lock().unwrap().push_back(event);
-            return DEFERRED_RESULT;
+        let call_event_name =
+            kind::is_kind(event.kind, kind::CALL_EVENT).then(|| call_trigger_name(&event.name));
+        let mut lookup_names = [""; 3];
+        let mut lookup_name_count = 0;
+        lookup_names[lookup_name_count] = event.name.as_str();
+        lookup_name_count += 1;
+        if let Some(call_event_name) = call_event_name.as_deref() {
+            lookup_names[lookup_name_count] = call_event_name;
+            lookup_name_count += 1;
+        }
+        if event.name != ANY_EVENT_NAME {
+            lookup_names[lookup_name_count] = ANY_EVENT_NAME;
+            lookup_name_count += 1;
         }
 
-        // Use optimized transition table if available
-        if let Some(event_transitions) = self.model.transition_map.get(&current_state) {
-            if let Some(transition_names) = event_transitions.get(&event.name) {
-                for transition_name in transition_names {
-                    if let Some(transition) = self.model.get_transition(transition_name) {
-                        // Check guard
-                        let guard_ok = self.evaluate_guard(&transition.guard, &event, ctx);
+        let event_transitions = self.model.transition_map.get(&current_state);
+        let root_state = self.model.state.qualified_name().to_string();
+        let mut selection_state = current_state.clone();
 
-                        if guard_ok {
-                            if let Some(new_state) = self
-                                .execute_transition(&current_state, transition, &event, ctx)
-                                .await
-                            {
-                                *self.current_state.write().unwrap() = new_state;
-                                if self.current_state.read().unwrap().as_str() != current_state {
-                                    self.replay_deferred_events();
+        loop {
+            if let Some(event_transitions) = event_transitions {
+                for event_name in &lookup_names[..lookup_name_count] {
+                    let Some(transition_names) = event_transitions.get(*event_name) else {
+                        continue;
+                    };
+                    for transition_name in transition_names {
+                        if let Some(transition) = self.model.get_transition(transition_name) {
+                            let selection_initial = if selection_state == root_state {
+                                self.model.state.initial.as_str()
+                            } else {
+                                self.model
+                                    .get_state(&selection_state)
+                                    .map(|state| state.initial.as_str())
+                                    .unwrap_or("")
+                            };
+                            let source_matches_selection_state =
+                                if transition.source == selection_state {
+                                    let transition_owner =
+                                        crate::path::dirname(transition.qualified_name());
+                                    let handles_at_or_below = transition_owner == selection_state
+                                        || crate::path::dirname(&selection_state) == root_state
+                                        || crate::path::is_ancestor_or_equal(
+                                            &selection_state,
+                                            transition_owner,
+                                        );
+                                    handles_at_or_below
+                                        || !self.is_deferred_in_state(&selection_state, event_name)
+                                } else {
+                                    selection_initial == transition.source
+                                };
+                            if !source_matches_selection_state {
+                                continue;
+                            }
+
+                            let guard_ok = self.evaluate_guard(&transition.guard, &event, ctx);
+                            if behavior_context::take_abort() {
+                                return Ok(EventOutcome::Processed);
+                            }
+
+                            if guard_ok {
+                                if let Some(new_state) = self
+                                    .execute_transition(&current_state, transition, &event, ctx)
+                                    .await?
+                                {
+                                    let state_changed = new_state.as_str() != current_state;
+                                    *self.current_state.write().unwrap() = new_state.clone();
+                                    if state_changed {
+                                        if self.model.get_state(&new_state).is_some_and(|state| {
+                                            is_kind(state.kind(), kind::FINAL_STATE)
+                                        }) {
+                                            let _ = self
+                                                .queue
+                                                .lock()
+                                                .unwrap()
+                                                .push_with_context(ctx, final_event());
+                                        }
+                                    }
+                                    return Ok(EventOutcome::Transition {
+                                        source: transition.source.clone(),
+                                    });
                                 }
-                                return PROCESSED_RESULT; // Event processed successfully
+                                return Ok(EventOutcome::Processed);
                             }
                         }
                     }
                 }
             }
+
+            if lookup_names[..lookup_name_count]
+                .iter()
+                .any(|event_name| self.is_deferred_in_state(&selection_state, event_name))
+            {
+                return Ok(EventOutcome::Deferred);
+            }
+
+            if selection_state == root_state {
+                break;
+            }
+            let parent = crate::path::dirname(&selection_state);
+            if parent == selection_state || parent == "/" {
+                break;
+            }
+            selection_state = parent.to_string();
         }
 
-        PROCESSED_RESULT
+        Ok(EventOutcome::Processed)
     }
 
     fn is_deferred_in_state(&self, state: &str, event_name: &str) -> bool {
-        self.model
-            .deferred_map
-            .get(state)
-            .and_then(|events| events.get(event_name))
-            .copied()
-            .unwrap_or(false)
-    }
-
-    fn replay_deferred_events(&self) {
-        let events: Vec<_> = {
-            let mut deferred = self.deferred_events.lock().unwrap();
-            deferred.drain(..).collect()
+        let deferred = if state == self.model.state.qualified_name() {
+            &self.model.state.deferred
+        } else {
+            let Some(state) = self.model.get_state(state) else {
+                return false;
+            };
+            &state.deferred
         };
 
-        if !events.is_empty() {
-            let _ = self
-                .queue
-                .lock()
-                .unwrap()
-                .prepend_regular_with_context(&self.context, events);
+        deferred
+            .iter()
+            .any(|deferred| deferred == event_name || deferred == ANY_EVENT_NAME)
+    }
+
+    fn deferred_owner(&self, event: &Event) -> Option<String> {
+        let current_state = self.current_state.read().unwrap().clone();
+        let root_state = self.model.state.qualified_name().to_string();
+        let event_names = event_names(event);
+        let mut selection_state = current_state;
+
+        loop {
+            if event_names
+                .iter()
+                .any(|event_name| self.is_deferred_in_state(&selection_state, event_name))
+            {
+                return Some(selection_state);
+            }
+
+            if selection_state == root_state {
+                return None;
+            }
+            let parent = crate::path::dirname(&selection_state);
+            if parent == selection_state || parent == "/" {
+                return None;
+            }
+            selection_state = parent.to_string();
         }
+    }
+
+    fn requeue_deferred_events(
+        &self,
+        ctx: &Context,
+        deferred_events: &mut Vec<DeferredEvent>,
+        transition_source: &str,
+    ) {
+        if deferred_events.is_empty() {
+            return;
+        }
+
+        let current_state = self.current_state.read().unwrap().clone();
+        let mut replay = Vec::new();
+        for deferred in deferred_events.drain(..) {
+            if self.deferred_event_survives(&deferred.owner, &current_state, transition_source) {
+                replay.push(deferred);
+            }
+        }
+
+        self.push_deferred_records(ctx, replay);
+    }
+
+    fn requeue_all_deferred_events(&self, ctx: &Context, deferred_events: &mut Vec<DeferredEvent>) {
+        if deferred_events.is_empty() {
+            return;
+        }
+
+        let replay = deferred_events.drain(..).collect();
+        self.push_deferred_records(ctx, replay);
+    }
+
+    fn push_deferred_records(&self, ctx: &Context, events: Vec<DeferredEvent>) {
+        if events.is_empty() {
+            return;
+        }
+
+        let mut requeued = VecDeque::new();
+        {
+            let mut queue = self.queue.lock().unwrap();
+            for deferred in events {
+                if queue.push_with_context(ctx, deferred.event.clone()).is_ok() {
+                    requeued.push_back(deferred);
+                }
+            }
+        }
+        self.deferred_events.lock().unwrap().extend(requeued);
+    }
+
+    fn take_deferred_event(&self, event: &Event) -> Option<DeferredEvent> {
+        let mut deferred = self.deferred_events.lock().unwrap();
+        let index = deferred.iter().position(|deferred| {
+            deferred.event.name == event.name
+                && deferred.event.qualified_name == event.qualified_name
+                && deferred.event.kind == event.kind
+        })?;
+        deferred.remove(index)
+    }
+
+    fn deferred_owner_still_active(&self, owner: &str, current_state: &str) -> bool {
+        crate::path::is_ancestor_or_equal(owner, current_state)
+    }
+
+    fn deferred_event_survives(
+        &self,
+        owner: &str,
+        current_state: &str,
+        transition_source: &str,
+    ) -> bool {
+        let root_state = self.model.state.qualified_name();
+        let mut ancestor = crate::path::dirname(owner).to_string();
+
+        while ancestor != root_state && ancestor != "/" && !ancestor.is_empty() {
+            if self
+                .model
+                .get_state(&ancestor)
+                .is_some_and(|state| is_kind(state.kind(), kind::SUBMACHINE_STATE))
+                && !crate::path::is_ancestor_or_equal(&ancestor, current_state)
+            {
+                return crate::path::is_ancestor_or_equal(&ancestor, transition_source)
+                    && ancestor != transition_source;
+            }
+
+            let parent = crate::path::dirname(&ancestor);
+            if parent == ancestor {
+                break;
+            }
+            ancestor = parent.to_string();
+        }
+        true
+    }
+
+    fn entry_point_reentry_boundary(
+        &self,
+        transition: &crate::element::Transition,
+    ) -> Option<String> {
+        let vertex = self.model.get_vertex(&transition.target)?;
+        if !is_kind(vertex.kind(), kind::ENTRY_POINT) {
+            return None;
+        }
+
+        let boundary = crate::path::dirname(vertex.qualified_name()).to_string();
+        if !self
+            .model
+            .get_state(&boundary)
+            .is_some_and(|state| is_kind(state.kind(), kind::SUBMACHINE_STATE))
+        {
+            return None;
+        }
+
+        (transition.source == boundary
+            || crate::path::is_ancestor_or_equal(&boundary, &transition.source))
+        .then_some(boundary)
     }
 
     async fn execute_transition(
@@ -536,7 +1211,7 @@ impl<T: Instance> HSM<T> {
         transition: &crate::element::Transition,
         event: &Event,
         ctx: &Context,
-    ) -> Option<String> {
+    ) -> TransitionOutcome {
         // Get the appropriate path for this transition
         let calculated_path;
         let path = if let Some(p) = transition.paths.get(current_state) {
@@ -546,55 +1221,172 @@ impl<T: Instance> HSM<T> {
             // Transition is defined on an ancestor, calculate path from current state
             use crate::path::is_ancestor_or_equal;
             if is_ancestor_or_equal(&transition.source, current_state) {
-                // Calculate path from current state to target
-                calculated_path = crate::model::Model::<T>::calculate_path_static(
-                    current_state,
-                    &transition.target,
-                );
+                let base_path = transition
+                    .paths
+                    .get(&transition.source)
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        crate::model::Model::<T>::calculate_path_static(
+                            &transition.source,
+                            &transition.target,
+                        )
+                    });
+                calculated_path = if is_kind(transition.element.kind, kind::INTERNAL) {
+                    base_path
+                } else {
+                    let mut exit = Vec::new();
+                    let mut exiting = current_state.to_string();
+                    while exiting != transition.source && !exiting.is_empty() {
+                        if self.model.get_state(&exiting).is_some() {
+                            exit.push(exiting.clone());
+                        }
+                        let parent = crate::path::dirname(&exiting);
+                        if parent == exiting || parent == "/" {
+                            break;
+                        }
+                        exiting = parent.to_string();
+                    }
+                    exit.extend(base_path.exit);
+                    crate::element::TransitionPath {
+                        exit,
+                        enter: base_path.enter,
+                    }
+                };
                 &calculated_path
             } else {
-                return None;
+                return Ok(None);
             }
         } else {
-            return None;
+            return Ok(None);
+        };
+        let reentry_path;
+        let path = if let Some(boundary) = self.entry_point_reentry_boundary(transition) {
+            reentry_path = {
+                let mut path = path.clone();
+                if !path.exit.iter().any(|state| state == &boundary) {
+                    path.exit.push(boundary.clone());
+                }
+                if !path.enter.iter().any(|state| state == &boundary) {
+                    path.enter.insert(0, boundary);
+                }
+                path
+            };
+            &reentry_path
+        } else {
+            path
         };
 
-        if !path.exit.is_empty() {
+        let target_is_history = self
+            .model
+            .get_vertex(&transition.target)
+            .is_some_and(|vertex| {
+                is_kind(vertex.kind(), kind::SHALLOW_HISTORY)
+                    || is_kind(vertex.kind(), kind::DEEP_HISTORY)
+            });
+
+        if !path.exit.is_empty() && !target_is_history {
             self.remember_history(current_state);
         }
 
         // Exit states
         for exiting in &path.exit {
             if let Some(state) = self.model.get_state(exiting) {
-                self.exit_state(state, event, ctx).await;
+                if !self.exit_state(state, event, ctx).await {
+                    return Ok(None);
+                }
             }
         }
 
         // Execute effects
         for effect_name in &transition.effect {
             if let Some(behavior) = self.model.get_behavior(effect_name) {
-                self.execute_behavior(behavior, event, ctx).await;
+                if !self.execute_behavior(behavior, event, ctx).await {
+                    return Ok(None);
+                }
+            }
+        }
+
+        let mut enter_path = path.enter.clone();
+        let mut effective_target = transition.target.clone();
+
+        if let Some(vertex) = self.model.get_vertex(&transition.target) {
+            if is_kind(vertex.kind(), kind::ENTRY_POINT) {
+                let mut selected_transition = None;
+                for transition_name in &vertex.transitions {
+                    let Some(entry_transition) = self.model.get_transition(transition_name) else {
+                        continue;
+                    };
+                    if entry_transition.target.is_empty() {
+                        continue;
+                    }
+                    if !self.evaluate_guard(&entry_transition.guard, event, ctx) {
+                        if behavior_context::take_abort() {
+                            return Ok(None);
+                        }
+                        continue;
+                    }
+                    if behavior_context::take_abort() {
+                        return Ok(None);
+                    }
+                    selected_transition = Some((
+                        vertex.qualified_name().to_string(),
+                        entry_transition.target.clone(),
+                        entry_transition.effect.clone(),
+                    ));
+                    break;
+                }
+
+                if let Some((entry_point, entry_target, entry_effects)) = selected_transition {
+                    for effect_name in &entry_effects {
+                        if let Some(behavior) = self.model.get_behavior(effect_name) {
+                            if !self.execute_behavior(behavior, event, ctx).await {
+                                return Ok(None);
+                            }
+                        }
+                    }
+
+                    let boundary = crate::path::dirname(&entry_point).to_string();
+                    let mut rewritten_enter = Vec::new();
+                    for entering in &enter_path {
+                        if entering == &entry_point {
+                            break;
+                        }
+                        rewritten_enter.push(entering.clone());
+                        if entering == &boundary {
+                            break;
+                        }
+                    }
+                    rewritten_enter.extend(
+                        crate::model::Model::<T>::calculate_path_static(&boundary, &entry_target)
+                            .enter,
+                    );
+                    enter_path = rewritten_enter;
+                    effective_target = entry_target;
+                }
             }
         }
 
         // Handle internal transitions
         if is_kind(transition.element.kind, kind::INTERNAL) {
-            return Some(current_state.to_string());
+            return Ok(Some(current_state.to_string()));
         }
 
         // Enter states
-        let mut result = current_state.to_string();
-        for entering in &path.enter {
+        for entering in &enter_path {
             if let Some(element) = self.model.members.get(entering) {
-                let default_entry = entering == &transition.target;
-                result = Box::pin(self.enter_state(element, event, default_entry, ctx)).await;
+                let default_entry = entering == &effective_target;
+                let Some(result) =
+                    Box::pin(self.enter_state(element, event, default_entry, ctx)).await?
+                else {
+                    return Ok(None);
+                };
                 if default_entry {
-                    return Some(result);
+                    return Ok(Some(result));
                 }
             }
         }
 
-        Some(transition.target.clone())
+        Ok(Some(effective_target))
     }
 
     async fn enter_state(
@@ -603,18 +1395,21 @@ impl<T: Instance> HSM<T> {
         event: &Event,
         default_entry: bool,
         ctx: &Context,
-    ) -> String {
+    ) -> TransitionOutcome {
         match element {
             ElementVariant::State(state) => {
                 // Execute entry actions
                 for entry_name in &state.entry {
                     if let Some(behavior) = self.model.get_behavior(entry_name) {
-                        self.execute_behavior(behavior, event, ctx).await;
+                        if !self.execute_behavior(behavior, event, ctx).await {
+                            return Ok(None);
+                        }
                     }
                 }
 
-                // Start activities (spawn them concurrently) with a new context for this state
-                if !state.activities.is_empty() {
+                let timer_transitions = self.timer_transitions_for_state(state.qualified_name());
+                // Start activities and timers with a new cancellation context for this state.
+                if !state.activities.is_empty() || !timer_transitions.is_empty() {
                     let state_ctx = Context::new();
                     self.state_contexts
                         .write()
@@ -626,6 +1421,19 @@ impl<T: Instance> HSM<T> {
                             self.spawn_activity(behavior, event, &state_ctx);
                         }
                     }
+
+                    for (transition_name, timer_kind, constraint_name) in timer_transitions {
+                        if let Some(transition) = self.model.get_transition(&transition_name) {
+                            self.spawn_timer_transition(
+                                state.qualified_name(),
+                                transition,
+                                timer_kind,
+                                &constraint_name,
+                                event,
+                                &state_ctx,
+                            );
+                        }
+                    }
                 }
 
                 // Handle initial transition
@@ -635,22 +1443,19 @@ impl<T: Instance> HSM<T> {
                             if let Some(initial_transition) =
                                 self.model.get_transition(&initial_vertex.transitions[0])
                             {
-                                if let Some(target_state) = Box::pin(self.execute_transition(
+                                return Box::pin(self.execute_transition(
                                     &state.qualified_name(),
                                     initial_transition,
                                     event,
                                     ctx,
                                 ))
-                                .await
-                                {
-                                    return target_state;
-                                }
+                                .await;
                             }
                         }
                     }
                 }
 
-                state.qualified_name().to_string()
+                Ok(Some(state.qualified_name().to_string()))
             }
             ElementVariant::Vertex(vertex) => {
                 if is_kind(vertex.kind(), kind::CHOICE) {
@@ -658,18 +1463,18 @@ impl<T: Instance> HSM<T> {
                     for transition_name in &vertex.transitions {
                         if let Some(transition) = self.model.get_transition(transition_name) {
                             let guard_ok = self.evaluate_guard(&transition.guard, event, ctx);
+                            if behavior_context::take_abort() {
+                                return Ok(None);
+                            }
 
                             if guard_ok {
-                                if let Some(target_state) = Box::pin(self.execute_transition(
+                                return Box::pin(self.execute_transition(
                                     vertex.qualified_name(),
                                     transition,
                                     event,
                                     ctx,
                                 ))
-                                .await
-                                {
-                                    return target_state;
-                                }
+                                .await;
                             }
                         }
                     }
@@ -679,10 +1484,63 @@ impl<T: Instance> HSM<T> {
                 {
                     return self.enter_history(vertex, event, ctx).await;
                 }
-                vertex.qualified_name().to_string()
+                if is_kind(vertex.kind(), kind::ENTRY_POINT)
+                    || is_kind(vertex.kind(), kind::EXIT_POINT)
+                {
+                    return self.enter_connection_point(vertex, event, ctx).await;
+                }
+                Ok(Some(vertex.qualified_name().to_string()))
             }
-            _ => element.qualified_name().to_string(),
+            _ => Ok(Some(element.qualified_name().to_string())),
         }
+    }
+
+    async fn enter_connection_point(
+        &self,
+        vertex: &crate::element::Vertex,
+        event: &Event,
+        ctx: &Context,
+    ) -> TransitionOutcome {
+        let mut result = vertex.qualified_name().to_string();
+
+        for transition_name in &vertex.transitions {
+            let Some(transition) = self.model.get_transition(transition_name) else {
+                continue;
+            };
+
+            if !self.evaluate_guard(&transition.guard, event, ctx) {
+                if behavior_context::take_abort() {
+                    return Ok(None);
+                }
+                continue;
+            }
+            if behavior_context::take_abort() {
+                return Ok(None);
+            }
+
+            let target_state =
+                Box::pin(self.execute_transition(vertex.qualified_name(), transition, event, ctx))
+                    .await?;
+            let Some(target_state) = target_state else {
+                return Ok(None);
+            };
+
+            if transition.target.is_empty() {
+                result = target_state;
+                continue;
+            }
+
+            return Ok(Some(target_state));
+        }
+
+        if is_kind(vertex.kind(), kind::EXIT_POINT) {
+            let exit_point = crate::path::basename(vertex.qualified_name());
+            return Err(HsmError::Runtime(format!(
+                "unhandled_exit_point\0unhandled exit point \"{exit_point}\""
+            )));
+        }
+
+        Ok(Some(result))
     }
 
     async fn enter_history(
@@ -690,7 +1548,7 @@ impl<T: Instance> HSM<T> {
         vertex: &crate::element::Vertex,
         event: &Event,
         ctx: &Context,
-    ) -> String {
+    ) -> TransitionOutcome {
         let parent = crate::path::dirname(vertex.qualified_name()).to_string();
         let is_shallow = is_kind(vertex.kind(), kind::SHALLOW_HISTORY);
         let remembered = if is_shallow {
@@ -705,18 +1563,24 @@ impl<T: Instance> HSM<T> {
                 .await;
         }
 
-        if let Some(transition_name) = vertex.transitions.first() {
+        for transition_name in &vertex.transitions {
             if let Some(transition) = self.model.get_transition(transition_name) {
-                if let Some(target_state) = Box::pin(self.execute_transition(
+                if !self.evaluate_guard(&transition.guard, event, ctx) {
+                    if behavior_context::take_abort() {
+                        return Ok(None);
+                    }
+                    continue;
+                }
+                if behavior_context::take_abort() {
+                    return Ok(None);
+                }
+                return Box::pin(self.execute_transition(
                     vertex.qualified_name(),
                     transition,
                     event,
                     ctx,
                 ))
-                .await
-                {
-                    return target_state;
-                }
+                .await;
             }
         }
 
@@ -725,19 +1589,17 @@ impl<T: Instance> HSM<T> {
                 if let Some(initial_vertex) = self.model.get_vertex(&parent_state.initial) {
                     if let Some(transition_name) = initial_vertex.transitions.first() {
                         if let Some(transition) = self.model.get_transition(transition_name) {
-                            if let Some(target_state) =
-                                Box::pin(self.execute_transition(&parent, transition, event, ctx))
-                                    .await
-                            {
-                                return target_state;
-                            }
+                            return Box::pin(
+                                self.execute_transition(&parent, transition, event, ctx),
+                            )
+                            .await;
                         }
                     }
                 }
             }
         }
 
-        vertex.qualified_name().to_string()
+        Ok(Some(vertex.qualified_name().to_string()))
     }
 
     async fn enter_history_target(
@@ -747,7 +1609,7 @@ impl<T: Instance> HSM<T> {
         default_last_entry: bool,
         event: &Event,
         ctx: &Context,
-    ) -> String {
+    ) -> TransitionOutcome {
         let mut enter_path = Vec::new();
         let mut current = target.to_string();
         while current != parent && !current.is_empty() && current != "/" {
@@ -760,16 +1622,20 @@ impl<T: Instance> HSM<T> {
         let last_index = enter_path.len().saturating_sub(1);
         for (index, entering) in enter_path.iter().enumerate() {
             if let Some(element) = self.model.members.get(entering) {
-                result = Box::pin(self.enter_state(
+                let next = Box::pin(self.enter_state(
                     element,
                     event,
                     default_last_entry && index == last_index,
                     ctx,
                 ))
-                .await;
+                .await?;
+                let Some(state) = next else {
+                    return Ok(None);
+                };
+                result = state;
             }
         }
-        result
+        Ok(Some(result))
     }
 
     fn remember_history(&self, leaf: &str) {
@@ -785,22 +1651,164 @@ impl<T: Instance> HSM<T> {
         }
     }
 
-    async fn exit_state(&self, state: &State, event: &Event, ctx: &Context) {
+    fn timer_transitions_for_state(&self, state_name: &str) -> Vec<(String, TimerKind, String)> {
+        let Some(state) = self.model.get_state(state_name) else {
+            return Vec::new();
+        };
+
+        let transitions = state
+            .vertex
+            .transitions
+            .iter()
+            .filter_map(|transition_name| {
+                let transition = self.model.get_transition(transition_name)?;
+                self.timer_kind_for_transition(transition)
+                    .map(|(kind, constraint)| (transition_name.clone(), kind, constraint))
+            })
+            .collect::<Vec<_>>();
+        transitions
+    }
+
+    fn timer_kind_for_transition(
+        &self,
+        transition: &crate::element::Transition,
+    ) -> Option<(TimerKind, String)> {
+        for (name, kind) in [
+            ("after", TimerKind::After),
+            ("at", TimerKind::At),
+            ("every", TimerKind::Every),
+        ] {
+            let constraint_name = crate::path::join(transition.qualified_name(), name);
+            if self
+                .model
+                .get_constraint(&constraint_name)
+                .is_some_and(|constraint| {
+                    constraint.duration.is_some() || constraint.timepoint.is_some()
+                })
+            {
+                return Some((kind, constraint_name));
+            }
+        }
+        None
+    }
+
+    fn timer_delay(&self, constraint_name: &str, event: &Event, ctx: &Context) -> Option<Duration> {
+        let constraint = self.model.get_constraint(constraint_name)?;
+        if let Some(duration_fn) = constraint.duration {
+            let instance = self.instance.read().unwrap();
+            let duration = duration_fn(ctx, &*instance, event);
+            if behavior_context::take_abort() {
+                return None;
+            }
+            return Some(duration);
+        }
+        if let Some(timepoint_fn) = constraint.timepoint {
+            let instance = self.instance.read().unwrap();
+            let timepoint = timepoint_fn(ctx, &*instance, event);
+            if behavior_context::take_abort() {
+                return None;
+            }
+            return Some(
+                timepoint
+                    .duration_since(SystemTime::now())
+                    .unwrap_or(Duration::ZERO),
+            );
+        }
+        None
+    }
+
+    fn spawn_timer_transition(
+        &self,
+        source_state: &str,
+        transition: &crate::element::Transition,
+        kind: TimerKind,
+        constraint_name: &str,
+        _event: &Event,
+        ctx: &Context,
+    ) {
+        let Some(event_name) = transition.events.first().cloned() else {
+            return;
+        };
+
+        let hsm = self.clone();
+        let source_state = source_state.to_string();
+        let constraint_name = constraint_name.to_string();
+        let timer_event = Event::time_event(event_name.clone());
+        let ctx = ctx.clone();
+        register_context_machine(&ctx, self);
+        let Some(delay) = self.timer_delay(&constraint_name, &timer_event, &ctx) else {
+            return;
+        };
+        let first_sleep = behavior_context::with_timer_registration(
+            &self.id(),
+            &source_state,
+            &event_name,
+            &ctx,
+            || self.clock.sleep(delay),
+        );
+
+        tokio::spawn(async move {
+            let mut sleep = Some(first_sleep);
+            loop {
+                if ctx.is_cancelled() {
+                    break;
+                }
+                if let Some(current_sleep) = sleep.take() {
+                    current_sleep.await;
+                } else {
+                    let Some(delay) = hsm.timer_delay(&constraint_name, &timer_event, &ctx) else {
+                        break;
+                    };
+                    let current_sleep = behavior_context::with_timer_registration(
+                        &hsm.id(),
+                        &source_state,
+                        &event_name,
+                        &ctx,
+                        || hsm.clock.sleep(delay),
+                    );
+                    current_sleep.await;
+                }
+                if ctx.is_cancelled() {
+                    break;
+                }
+                let _ = hsm.dispatch(&ctx, timer_event.clone()).await;
+                if kind != TimerKind::Every {
+                    break;
+                }
+            }
+        });
+    }
+
+    async fn exit_state(&self, state: &State, event: &Event, ctx: &Context) -> bool {
         // Cancel activities for this specific state
         let state_name = state.qualified_name();
         if let Some(state_ctx) = self.state_contexts.write().unwrap().remove(state_name) {
             state_ctx.cancel();
+            let running = running_activity(&state_ctx);
+            let cancelled = cancel_activities(&state_ctx);
+            if !cancelled.is_empty() {
+                let instance = self.instance.read().unwrap();
+                for behavior in cancelled {
+                    if running.as_deref() == Some(behavior.as_str()) {
+                        continue;
+                    }
+                    instance.activity_cancelled(&behavior);
+                }
+            }
         }
 
         // Execute exit actions
         for exit_name in &state.exit {
             if let Some(behavior) = self.model.get_behavior(exit_name) {
-                self.execute_behavior(behavior, event, ctx).await;
+                if !self.execute_behavior(behavior, event, ctx).await {
+                    return false;
+                }
             }
         }
+        true
     }
 
-    async fn execute_behavior(&self, behavior: &Behavior<T>, event: &Event, ctx: &Context) {
+    async fn execute_behavior(&self, behavior: &Behavior<T>, event: &Event, ctx: &Context) -> bool {
         // Determine which operation to execute based on behavior type
         let operation_future = if let Some(entry_fn) = behavior.entry {
             let mut instance = self.instance.write().unwrap();
@@ -814,15 +1822,45 @@ impl<T: Instance> HSM<T> {
         } else if let Some(activity_fn) = behavior.activity {
             let mut instance = self.instance.write().unwrap();
             activity_fn(ctx, &mut *instance, event)
-        } else if let Some(operation_name) = &behavior.operation {
-            self.execute_operation_by_name(operation_name, event, ctx)
-                .await;
-            return;
+        } else if let Some(operation) = &behavior.operation {
+            match operation {
+                BehaviorOperation::Operation(operation_name) => {
+                    return self
+                        .execute_operation_by_name(operation_name, event, ctx)
+                        .await;
+                }
+                BehaviorOperation::Observation {
+                    observer,
+                    source,
+                    occurrence,
+                } => {
+                    return self
+                        .execute_observation(*observer, source, occurrence, event, ctx)
+                        .await;
+                }
+            }
         } else {
-            return;
+            return true;
         };
 
-        operation_future.await;
+        await_behavior_future(operation_future).await
+    }
+
+    async fn execute_observation(
+        &self,
+        observer: OperationFn<T>,
+        source: &str,
+        occurrence: &str,
+        event: &Event,
+        ctx: &Context,
+    ) -> bool {
+        let observation =
+            Event::observation(source.to_string(), occurrence.to_string(), event.clone());
+        let observation_future = {
+            let mut instance = self.instance.write().unwrap();
+            observer(ctx, &mut *instance, &observation)
+        };
+        await_behavior_future(observation_future).await
     }
 
     fn evaluate_guard(&self, constraint_name: &str, event: &Event, ctx: &Context) -> bool {
@@ -842,8 +1880,10 @@ impl<T: Instance> HSM<T> {
         if let Some(operation_name) = &constraint.operation {
             if let Some(operation) = self.model.get_operation(operation_name) {
                 if let Some(guard_fn) = operation.guard {
-                    let instance = self.instance.read().unwrap();
-                    return guard_fn(ctx, &*instance, event);
+                    return behavior_context::with_operation_name(operation_name, || {
+                        let instance = self.instance.read().unwrap();
+                        guard_fn(ctx, &*instance, event)
+                    });
                 }
             }
         }
@@ -851,40 +1891,260 @@ impl<T: Instance> HSM<T> {
         true
     }
 
-    async fn execute_operation_by_name(&self, operation_name: &str, event: &Event, ctx: &Context) {
+    async fn execute_operation_by_name(
+        &self,
+        operation_name: &str,
+        event: &Event,
+        ctx: &Context,
+    ) -> bool {
         let Some(operation) = self.model.get_operation(operation_name) else {
-            return;
+            return true;
         };
         let Some(action) = operation.action else {
-            return;
+            return true;
         };
-        let operation_future = {
+        let activity_behavior = crate::path::basename(operation_name).to_string();
+        let mark_activity = is_active_activity(ctx, &activity_behavior);
+        if mark_activity {
+            behavior_context::begin_activity(ctx, &activity_behavior);
+        }
+        let operation_future = behavior_context::with_operation_name(operation_name, || {
             let mut instance = self.instance.write().unwrap();
             action(ctx, &mut *instance, event)
-        };
-        operation_future.await;
+        });
+        self.begin_operation();
+        let ok = await_behavior_future(operation_future).await;
+        let operation_finished = self.end_operation();
+        if operation_finished && !self.is_draining() {
+            if self.flush_reentrant_events(ctx).unwrap_or(false) {
+                let _ = Box::pin(self.drain_queue(ctx)).await;
+            }
+        }
+        if mark_activity {
+            behavior_context::end_activity(ctx);
+        }
+        ok
     }
 
     fn spawn_activity(&self, behavior: &Behavior<T>, event: &Event, ctx: &Context) {
         if let Some(activity_fn) = behavior.activity {
+            let behavior_id = crate::path::basename(behavior.qualified_name()).to_string();
+            register_activity(ctx, &behavior_id);
             let mut instance = self.instance.write().unwrap();
             let future = activity_fn(ctx, &mut *instance, event);
             drop(instance); // Release the lock before spawning
 
             // Spawn the activity to run concurrently
+            let hsm = self.clone();
+            let ctx = ctx.clone();
             tokio::spawn(async move {
+                register_context_machine(&ctx, &hsm);
                 future.await;
+                unregister_context_machine(&ctx, &hsm);
+                if finish_activity(&ctx, &behavior_id) && !ctx.is_cancelled() {
+                    let instance = hsm.instance.read().unwrap();
+                    instance.activity_done(&behavior_id);
+                }
             });
-        } else if let Some(operation_name) = &behavior.operation {
-            let operation_name = operation_name.clone();
+        } else if let Some(operation) = &behavior.operation {
+            let operation = operation.clone();
             let event = event.clone();
             let ctx = ctx.clone();
             let hsm = self.clone();
+            let behavior_id = match &operation {
+                BehaviorOperation::Operation(operation_name) => {
+                    crate::path::basename(operation_name).to_string()
+                }
+                BehaviorOperation::Observation { .. } => {
+                    crate::path::basename(behavior.qualified_name()).to_string()
+                }
+            };
+            register_activity(&ctx, &behavior_id);
             tokio::spawn(async move {
-                hsm.execute_operation_by_name(&operation_name, &event, &ctx)
-                    .await;
+                register_context_machine(&ctx, &hsm);
+                let completed = match operation {
+                    BehaviorOperation::Operation(operation_name) => {
+                        hsm.execute_operation_by_name(&operation_name, &event, &ctx)
+                            .await
+                    }
+                    BehaviorOperation::Observation {
+                        observer,
+                        source,
+                        occurrence,
+                    } => {
+                        hsm.execute_observation(observer, &source, &occurrence, &event, &ctx)
+                            .await
+                    }
+                };
+                unregister_context_machine(&ctx, &hsm);
+                if completed && finish_activity(&ctx, &behavior_id) && !ctx.is_cancelled() {
+                    let instance = hsm.instance.read().unwrap();
+                    instance.activity_done(&behavior_id);
+                }
             });
         }
+    }
+}
+
+impl<T: Instance> ContextMachine for HSM<T> {
+    fn id(&self) -> String {
+        HSM::id(self)
+    }
+
+    fn qualified_name(&self) -> String {
+        HSM::qualified_name(self)
+    }
+
+    fn state(&self) -> String {
+        HSM::state(self)
+    }
+
+    fn is_started(&self) -> bool {
+        HSM::is_started(self)
+    }
+
+    fn can_receive_dispatch(&self) -> bool {
+        self.is_started() || self.is_draining()
+    }
+
+    fn dispatch_event(
+        &self,
+        ctx: &Context,
+        event: Event,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
+        self.dispatch(ctx, event)
+    }
+
+    fn get_attribute_value(&self, name: &str) -> Option<AttributeValue> {
+        self.get(name)
+    }
+
+    fn set_attribute_value(&self, name: &str, value: AttributeValue) -> Result<()> {
+        self.set(name, value)
+    }
+
+    fn set_attribute_value_with_context(
+        &self,
+        ctx: &Context,
+        name: &str,
+        value: AttributeValue,
+    ) -> Result<()> {
+        self.set_with_context(ctx, name, value)
+    }
+
+    fn call_operation_value(
+        &self,
+        ctx: &Context,
+        name: &str,
+        args: Vec<Arc<dyn Any + Send + Sync>>,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
+        self.call_with_args(ctx, name, args)
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+impl<T: Instance> SnapshotTarget for HSM<T> {
+    type Snapshot = Snapshot;
+
+    fn take_snapshot_with_context(&self, _ctx: &Context) -> Result<Self::Snapshot> {
+        self.take_snapshot()
+    }
+}
+
+impl<T: Instance> DispatchTarget for HSM<T> {
+    fn dispatch_with_context(
+        &self,
+        ctx: &Context,
+        event: Event,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
+        self.dispatch(ctx, event)
+    }
+}
+
+impl<T: Instance> StopTarget for HSM<T> {
+    fn stop_with_context(&self, ctx: &Context) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
+        self.stop(ctx)
+    }
+}
+
+impl<T: Instance> RestartTarget for HSM<T> {
+    fn restart_with_context(
+        &self,
+        ctx: &Context,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
+        self.restart(ctx)
+    }
+}
+
+impl<T: Instance> AttributeGetTarget for HSM<T> {
+    fn get_attribute(&self, name: &str) -> Option<AttributeValue> {
+        self.get(name)
+    }
+}
+
+impl<T: Instance, V: Into<AttributeValue>> AttributeSetTarget<V> for HSM<T> {
+    fn set_attribute(&self, name: &str, value: V) -> Result<()> {
+        self.set(name, value)
+    }
+}
+
+impl<T: Instance> OperationCallTarget for HSM<T> {
+    fn call_operation(
+        &self,
+        ctx: &Context,
+        name: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
+        self.call(ctx, name)
+    }
+
+    fn call_operation_with_args(
+        &self,
+        ctx: &Context,
+        name: &str,
+        args: Vec<Arc<dyn Any + Send + Sync>>,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
+        self.call_with_args(ctx, name, args)
+    }
+}
+
+impl<T, D> StartDataTarget<D> for HSM<T>
+where
+    T: Instance,
+    D: Any + Send + Sync + 'static,
+{
+    fn start_with_data_target(&self, data: D) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
+        self.start_with_data(data)
+    }
+}
+
+impl<T, D> RestartDataTarget<D> for HSM<T>
+where
+    T: Instance,
+    D: Any + Send + Sync + 'static,
+{
+    fn restart_with_data_with_context(
+        &self,
+        ctx: &Context,
+        data: D,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
+        self.restart_with_data(ctx, data)
+    }
+}
+
+impl<T: Instance> RuntimeIdentityTarget for HSM<T> {
+    fn runtime_id(&self) -> String {
+        self.id()
+    }
+
+    fn runtime_name(&self) -> String {
+        self.name()
+    }
+
+    fn runtime_qualified_name(&self) -> String {
+        self.qualified_name()
     }
 }
 
@@ -899,7 +2159,6 @@ impl<T: Instance> Clone for HSM<T> {
             shallow_history: self.shallow_history.clone(),
             deep_history: self.deep_history.clone(),
             attributes: self.attributes.clone(),
-            processing: Arc::new(AtomicBool::new(false)),
             context: self.context.clone(),
             clock: self.clock.clone(),
             id: self.id.clone(),

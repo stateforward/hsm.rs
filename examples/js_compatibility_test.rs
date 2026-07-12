@@ -1,5 +1,5 @@
 // Test to verify Rust kind values match JavaScript values exactly
-use rust::{is_kind, kind, make_kind};
+use stateforward_hsm::{is_kind, kind, make_kind};
 
 fn main() {
     println!("=== JavaScript Compatibility Test ===");

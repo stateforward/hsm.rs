@@ -1,5 +1,5 @@
 // Demonstration of the new macro-based kind system
-use rust::{KindValue, is_kind, kind, make_kind};
+use stateforward_hsm::{KindValue, is_kind, kind, make_kind};
 
 fn main() {
     println!("=== Rust HSM Kind System Demo ===");

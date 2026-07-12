@@ -1,4 +1,4 @@
-use rust::*;
+use stateforward_hsm::*;
 /**
  * @fileoverview Tests for multiple action behaviors in HSM
  * Tests entry, exit, effect, and activity macros with multiple functions

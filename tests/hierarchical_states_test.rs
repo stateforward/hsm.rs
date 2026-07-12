@@ -1,4 +1,4 @@
-use rust::*;
+use stateforward_hsm::*;
 /**
  * @fileoverview Test hierarchical states and nested state transitions
  * Tests complex state hierarchies, entry/exit order, and transitions between nested states

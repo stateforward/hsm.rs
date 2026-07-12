@@ -1,4 +1,4 @@
-use rust::*;
+use stateforward_hsm::*;
 use std::sync::{Arc, Mutex};
 /**
  * @fileoverview Tests for entry behaviors in HSM

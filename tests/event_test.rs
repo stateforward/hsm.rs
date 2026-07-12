@@ -1,6 +1,7 @@
-use rust::event::*;
-use rust::kind;
+use stateforward_hsm::event::*;
+use stateforward_hsm::kind;
 use std::sync::Arc;
+use std::time::UNIX_EPOCH;
 
 #[test]
 fn test_event_creation() {
@@ -87,8 +88,8 @@ fn test_time_event() {
 #[test]
 fn test_error_event() {
     let event = Event::error_event();
-    assert_eq!(event.name, "hsm_error");
-    assert_eq!(event.qualified_name, "hsm_error");
+    assert_eq!(event.name, "hsm/error");
+    assert_eq!(event.qualified_name, "hsm/error");
     assert_eq!(event.kind, kind::ERROR_EVENT);
     assert!(event.data.is_none());
 }
@@ -96,12 +97,60 @@ fn test_error_event() {
 #[test]
 fn test_standard_events() {
     let initial = initial_event();
-    assert_eq!(initial.name, "hsm_initial");
+    assert_eq!(initial.name, "hsm/initial");
     assert_eq!(initial.kind, kind::COMPLETION_EVENT);
 
     let final_ev = final_event();
-    assert_eq!(final_ev.name, "hsm_final");
+    assert_eq!(final_ev.name, "hsm/final");
     assert_eq!(final_ev.kind, kind::COMPLETION_EVENT);
+
+    let any = any_event();
+    assert_eq!(AnyEvent, "*");
+    assert_eq!(any.name, AnyEvent);
+    assert_eq!(any.kind, kind::EVENT);
+}
+
+#[test]
+fn test_pascal_runtime_event_constructors() {
+    let initial = InitialEvent();
+    assert_eq!(initial.name, "hsm/initial");
+    assert_eq!(initial.qualified_name, "hsm/initial");
+    assert_eq!(initial.kind, kind::COMPLETION_EVENT);
+
+    let final_event = FinalEvent();
+    assert_eq!(final_event.name, "hsm/final");
+    assert_eq!(final_event.qualified_name, "hsm/final");
+    assert_eq!(final_event.kind, kind::COMPLETION_EVENT);
+
+    let error = ErrorEvent();
+    assert_eq!(error.name, "hsm/error");
+    assert_eq!(error.qualified_name, "hsm/error");
+    assert_eq!(error.kind, kind::ERROR_EVENT);
+
+    let completion = CompletionEvent("done");
+    assert_eq!(completion.name, "done");
+    assert_eq!(completion.qualified_name, "done");
+    assert_eq!(completion.kind, kind::COMPLETION_EVENT);
+}
+
+#[test]
+fn test_observation_event_carries_observed_event_payload() {
+    let observed = Event::new("go").with_data(7i32);
+    let observation = ObservationEvent("/Observed/idle/entry", "behavior", observed.clone());
+
+    assert_eq!(observation.name, OBSERVATION_EVENT_NAME);
+    assert_eq!(observation.qualified_name, OBSERVATION_EVENT_NAME);
+    assert_eq!(observation.kind, kind::EVENT);
+
+    let data = observation
+        .get_data::<ObservationData>()
+        .expect("observation event should carry ObservationData");
+    assert_eq!(data.Occurrence, "behavior");
+    assert_eq!(data.Event.name, observed.name);
+    assert_eq!(data.Event.qualified_name, observed.qualified_name);
+    assert_eq!(data.Event.kind, observed.kind);
+    assert!(data.Event.get_data::<i32>().is_some());
+    assert!(data.Time.duration_since(UNIX_EPOCH).is_ok());
 }
 
 #[test]
@@ -189,7 +238,7 @@ fn test_event_builder_pattern() {
 
 #[test]
 fn test_event_kinds_hierarchy() {
-    use rust::kind::is_kind;
+    use stateforward_hsm::kind::is_kind;
 
     // Regular event
     let event = Event::new("test");

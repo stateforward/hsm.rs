@@ -1,4 +1,4 @@
-use rust::*;
+use stateforward_hsm::*;
 /**
  * @fileoverview Tests following the HSM Framework Rust Reference
  * Tests macro-based API, proper function signatures, and Rust-specific patterns

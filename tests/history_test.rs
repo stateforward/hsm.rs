@@ -1,4 +1,4 @@
-use rust::*;
+use stateforward_hsm::*;
 
 #[derive(Debug, Default)]
 struct HistoryInstance;
@@ -31,7 +31,7 @@ async fn shallow_history_restores_direct_child_then_initial() -> Result<()> {
                     transition!(on!("leave"), target!("/ShallowHistoryRules/outside"))
                 )
             ),
-            shallow_history!("history")
+            shallow_history!("history", target!("region"))
         ),
         state!(
             "outside",
@@ -70,7 +70,7 @@ async fn deep_history_restores_leaf_state() -> Result<()> {
                     transition!(on!("leave"), target!("/DeepHistoryRules/outside"))
                 )
             ),
-            deep_history!("history")
+            deep_history!("history", target!("region/a1"))
         ),
         state!(
             "outside",

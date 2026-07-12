@@ -1,4 +1,4 @@
-use rust::*;
+use stateforward_hsm::*;
 /**
  * @fileoverview Test different types of transitions
  * Tests external, internal, self, and local transitions with proper entry/exit behavior

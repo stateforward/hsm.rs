@@ -1,6 +1,6 @@
 use std::time::{Duration, SystemTime};
 
-use rust::*;
+use stateforward_hsm::*;
 
 #[derive(Debug)]
 struct ParityInstance;
@@ -38,7 +38,7 @@ async fn when_is_canonical_alias_for_on_set() -> Result<()> {
     let hsm = start(&ctx, ParityInstance, model)?;
     hsm.start().await?;
 
-    hsm.Set("count", 1);
+    hsm.Set("count", 1)?;
     assert_eq!(hsm.state(), "/WhenAliasMachine/changed");
 
     Ok(())

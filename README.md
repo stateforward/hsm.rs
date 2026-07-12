@@ -15,11 +15,13 @@ A high-performance, memory-safe Hierarchical State Machine implementation in Rus
 
 ## 📦 Installation
 
+<!-- package name and version from Cargo.toml -->
+
 Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-rust = "0.2.0"
+stateforward-hsm = "0.2.0"
 
 [dev-dependencies]
 tokio = { version = "1.0", features = ["full"] }
@@ -30,7 +32,7 @@ tokio = { version = "1.0", features = ["full"] }
 ### Basic State Machine
 
 ```rust
-use rust::*;
+use stateforward_hsm::*;
 
 // Define your instance type
 #[derive(Debug)]
@@ -215,7 +217,7 @@ rust/
 Rust HSM features a unique **macro-based kind system** that provides compile-time type hierarchy checking, similar to C++ templates:
 
 ```rust
-use rust::{make_kind, kind, is_kind};
+use stateforward_hsm::{make_kind, kind, is_kind};
 
 // Create custom kinds with inheritance
 let custom_kind = make_kind!(30, kind::ELEMENT);
@@ -443,6 +445,16 @@ cargo test test_basic_state_machine_with_simple_transitions
 * **Minimal allocations**: Smart use of `Rc`/`Arc` for shared data
 * **Stack allocation**: Events and contexts are stack-allocated where possible
 
+<!-- borrowed dispatch API from src/hsm_impl.rs -->
+
+For events that are awaited immediately, `dispatch_borrowed` avoids cloning the
+machine and context into the returned future while preserving the normal queue,
+hierarchy, guard, and lifecycle behavior:
+
+```rust
+hsm.dispatch_borrowed(&ctx, Event::new("start")).await?;
+```
+
 ### Benchmarking
 
 ```bash
@@ -460,7 +472,7 @@ cargo flamegraph --bench hsm_bench
 
 ```toml
 [dependencies]
-rust = { version = "0.1.0", default-features = false }
+stateforward-hsm = { version = "0.2.0", default-features = false }
 
 [features]
 default = ["tokio"]
@@ -479,7 +491,7 @@ let hsm = start(&ctx, instance, model)?;
 ## 🛡️ Error Handling
 
 ```rust
-use rust::{Result, HsmError};
+use stateforward_hsm::{Result, HsmError};
 
 // Validation errors
 match validate(&model) {
