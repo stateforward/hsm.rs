@@ -5,6 +5,7 @@ edition = "2024"
 description = "A hierarchical state machine runtime for Rust"
 repository = "https://github.com/stateforward/hsm.rs"
 readme = "README.md"
+license = "MIT OR Apache-2.0"
 keywords = ["state-machine", "hsm", "statechart"]
 categories = ["asynchronous", "data-structures"]
 
