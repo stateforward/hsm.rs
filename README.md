@@ -621,11 +621,13 @@ cargo doc --open
 
 ## 🤝 Contributing
 
+<!-- contributor verification commands -->
+
 Contributions are welcome! Please ensure:
 
 1. All tests pass: `cargo test`
 2. Code is formatted: `cargo fmt`
-3. No clippy warnings: `cargo clippy`
+3. Run Clippy: `cargo clippy`
 4. Documentation is updated
 
 ## 📜 License
