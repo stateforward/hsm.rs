@@ -21,7 +21,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-stateforward-hsm = "0.1.0"
+stateforward-hsm = "1.3.1"
 
 [dev-dependencies]
 tokio = { version = "1.0", features = ["full"] }
@@ -472,7 +472,7 @@ cargo flamegraph --bench hsm_bench
 
 ```toml
 [dependencies]
-stateforward-hsm = "0.1.0"
+stateforward-hsm = "1.3.1"
 ```
 
 `stateforward-hsm` requires the Tokio runtime because its dispatch and lifecycle APIs are asynchronous.
