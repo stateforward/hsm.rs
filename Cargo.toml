@@ -1,6 +1,6 @@
 [package]
 name = "stateforward-hsm"
-version = "0.2.0"
+version = "1.0.0"
 edition = "2024"
 description = "A hierarchical state machine runtime for Rust"
 repository = "https://github.com/stateforward/hsm.rs"
@@ -8,17 +8,11 @@ readme = "README.md"
 license = "MIT OR Apache-2.0"
 keywords = ["state-machine", "hsm", "statechart"]
 categories = ["asynchronous", "data-structures"]
+exclude = ["debug_test.rs"]
 
 [lib]
 name = "stateforward_hsm"
 
 [dependencies]
 thiserror = "1.0"
-tokio = { version = "1.0", features = ["full"], optional = true }
-
-[features]
-default = ["tokio"]
-tokio = ["dep:tokio"]
-
-[dev-dependencies]
 tokio = { version = "1.0", features = ["full"] }

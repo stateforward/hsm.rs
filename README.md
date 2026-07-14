@@ -21,7 +21,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-stateforward-hsm = "0.2.0"
+stateforward-hsm = "1.0.0"
 
 [dev-dependencies]
 tokio = { version = "1.0", features = ["full"] }
@@ -468,25 +468,14 @@ cargo flamegraph --bench hsm_bench
 
 ## 🔧 Configuration
 
-### Features
+<!-- runtime requirement from Cargo.toml -->
 
 ```toml
 [dependencies]
-stateforward-hsm = { version = "0.2.0", default-features = false }
-
-[features]
-default = ["tokio"]
-tokio = ["dep:tokio"]  # Async/await support
+stateforward-hsm = "1.0.0"
 ```
 
-### Without async support
-
-```rust
-// Synchronous usage (no tokio)
-let model = define!("SyncMachine", /* ... */);
-let hsm = start(&ctx, instance, model)?;
-// ... use without .await
-```
+`stateforward-hsm` requires the Tokio runtime because its dispatch and lifecycle APIs are asynchronous.
 
 ## 🛡️ Error Handling
 
@@ -641,7 +630,7 @@ Contributions are welcome! Please ensure:
 
 ## 📜 License
 
-This project is licensed under the MIT License.
+This project is licensed under either of [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option.
 
 ## 🔗 Related Implementations
 

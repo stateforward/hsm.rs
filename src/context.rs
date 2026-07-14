@@ -39,15 +39,11 @@ impl Context {
             deadline: Some(Instant::now() + timeout),
         };
 
-        // Spawn timeout task if tokio is available
-        #[cfg(feature = "tokio")]
-        {
-            let cancelled = ctx.cancelled.clone();
-            tokio::spawn(async move {
-                tokio::time::sleep(timeout).await;
-                cancelled.store(true, Ordering::Release);
-            });
-        }
+        let cancelled = ctx.cancelled.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(timeout).await;
+            cancelled.store(true, Ordering::Release);
+        });
 
         ctx
     }
