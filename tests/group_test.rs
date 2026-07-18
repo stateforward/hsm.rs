@@ -182,7 +182,7 @@ async fn group_flattens_members_and_dispatches_only_started_machines() -> Result
         vec![
             "/GroupMachine/idle".to_string(),
             "/GroupMachine/idle".to_string(),
-            "/GroupMachine".to_string(),
+            "".to_string(),
         ]
     );
 
@@ -190,7 +190,7 @@ async fn group_flattens_members_and_dispatches_only_started_machines() -> Result
 
     assert_eq!(alpha.state(), "/GroupMachine/done");
     assert_eq!(bravo.state(), "/GroupMachine/done");
-    assert_eq!(unstarted.state(), "/GroupMachine");
+    assert_eq!(unstarted.state(), "");
 
     Ok(())
 }
@@ -318,16 +318,10 @@ async fn group_snapshot_restart_and_stop_preserve_member_order() -> Result<()> {
     );
 
     Stop(&ctx, &group).await?;
-    assert_eq!(
-        group.state(),
-        vec!["/GroupMachine".to_string(), "/GroupMachine".to_string()]
-    );
+    assert_eq!(group.state(), vec!["".to_string(), "".to_string()]);
 
     Dispatch(&ctx, &group, Event::new("go")).await?;
-    assert_eq!(
-        group.state(),
-        vec!["/GroupMachine".to_string(), "/GroupMachine".to_string()]
-    );
+    assert_eq!(group.state(), vec!["".to_string(), "".to_string()]);
 
     Ok(())
 }

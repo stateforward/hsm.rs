@@ -220,7 +220,7 @@ impl<T: Instance> HSM<T> {
 
         let model = Arc::new(model);
         let instance = Arc::new(RwLock::new(instance));
-        let initial_state = model.state.qualified_name().to_string();
+        let initial_state = String::new();
         let name = config
             .Name
             .clone()
@@ -262,10 +262,11 @@ impl<T: Instance> HSM<T> {
         Box::pin(async move {
             crate::validate(&hsm.model)?;
 
-            if hsm.state() != hsm.model.state.qualified_name() {
+            if !hsm.is_inactive() {
                 return Err(HsmError::Validation("already started HSM".to_string()));
             }
 
+            *hsm.current_state.write().unwrap() = hsm.model.state.qualified_name().to_string();
             *hsm.attributes.lock().unwrap() = default_attribute_values(&hsm.model);
             register_context_machine(&hsm.context, &hsm);
             let mut initial_event = initial_event();
@@ -307,7 +308,7 @@ impl<T: Instance> HSM<T> {
 
             let current_state = hsm.current_state.read().unwrap().clone();
             let root = hsm.model.state.qualified_name().to_string();
-            if current_state == root {
+            if current_state.is_empty() || current_state == root {
                 return Ok(());
             }
 
@@ -324,7 +325,7 @@ impl<T: Instance> HSM<T> {
             hsm.shallow_history.lock().unwrap().clear();
             hsm.deep_history.lock().unwrap().clear();
             hsm.state_contexts.write().unwrap().clear();
-            *hsm.current_state.write().unwrap() = root;
+            *hsm.current_state.write().unwrap() = String::new();
             unregister_context_machine(&hsm.context, &hsm);
             if ctx.registry_key() != hsm.context.registry_key() {
                 unregister_context_machine(&ctx, &hsm);
@@ -352,7 +353,7 @@ impl<T: Instance> HSM<T> {
         Box::pin(async move {
             let current_state = hsm.current_state.read().unwrap().clone();
             let root = hsm.model.state.qualified_name().to_string();
-            if current_state == root {
+            if current_state.is_empty() || current_state == root {
                 return Err(HsmError::Validation(
                     "restart requires a started HSM".to_string(),
                 ));
@@ -392,15 +393,24 @@ impl<T: Instance> HSM<T> {
     }
 
     pub fn state(&self) -> String {
-        self.current_state.read().unwrap().clone()
+        self.raw_state()
     }
 
     pub fn current_state(&self) -> String {
-        self.current_state.read().unwrap().clone()
+        self.state()
     }
 
     pub fn is_started(&self) -> bool {
-        self.state() != self.model.state.qualified_name()
+        !self.is_inactive()
+    }
+
+    fn raw_state(&self) -> String {
+        self.current_state.read().unwrap().clone()
+    }
+
+    fn is_inactive(&self) -> bool {
+        let state = self.raw_state();
+        !self.is_draining() && (state.is_empty() || state == self.model.state.qualified_name())
     }
 
     pub fn context(&self) -> &Context {
@@ -453,8 +463,8 @@ impl<T: Instance> HSM<T> {
     }
 
     pub fn take_snapshot(&self) -> Result<Snapshot> {
-        let state = self.state();
-        if state == self.model.state.qualified_name() && !self.is_draining() {
+        let state = self.raw_state();
+        if self.is_inactive() {
             return Err(HsmError::Runtime(
                 "take snapshot requires a started HSM".to_string(),
             ));
@@ -561,7 +571,7 @@ impl<T: Instance> HSM<T> {
         name: &str,
         value: V,
     ) -> Result<()> {
-        if self.state() == self.model.state.qualified_name() && !self.is_draining() {
+        if self.is_inactive() {
             return Err(HsmError::Runtime("set requires a started HSM".to_string()));
         }
 
@@ -635,7 +645,7 @@ impl<T: Instance> HSM<T> {
         name: &str,
         args: Vec<Arc<dyn Any + Send + Sync>>,
     ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
-        if self.state() == self.model.state.qualified_name() && !self.is_draining() {
+        if self.is_inactive() {
             return Box::pin(async {
                 Err(HsmError::Runtime(
                     "operation requires a started HSM".to_string(),
@@ -791,7 +801,7 @@ impl<T: Instance> HSM<T> {
         ctx: &Context,
         event: Event,
     ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
-        if self.state() == self.model.state.qualified_name() && !self.is_draining() {
+        if self.is_inactive() {
             return Box::pin(async {
                 Err(HsmError::Runtime(
                     "dispatch requires a started HSM".to_string(),
@@ -811,7 +821,7 @@ impl<T: Instance> HSM<T> {
         event: Event,
     ) -> impl Future<Output = Result<()>> + Send + 'a {
         async move {
-            if self.state() == self.model.state.qualified_name() && !self.is_draining() {
+            if self.is_inactive() {
                 return Err(HsmError::Runtime(
                     "dispatch requires a started HSM".to_string(),
                 ));

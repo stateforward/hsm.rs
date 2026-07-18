@@ -2912,10 +2912,10 @@ fn append_stable_trace_for_expectation(
     expect: &BTreeMap<String, Json>,
 ) {
     let state = match expect.get("state") {
-        Some(Json::String(expected_state)) => actual_state_for_expectation(hsm, expected_state),
+        Some(Json::String(_)) => hsm.state(),
         _ => expected_stable_state_from_trace(expect)
             .as_deref()
-            .map(|expected_state| actual_state_for_expectation(hsm, expected_state))
+            .map(|_| hsm.state())
             .unwrap_or_else(|| hsm.state()),
     };
     append_stable_trace_label(hsm, state);
@@ -5760,7 +5760,7 @@ fn assert_expectations(
         let Json::String(expected_state) = expected_state else {
             return Err(ConfError::Fail("expect.state must be a string".to_string()));
         };
-        let actual_state = actual_state_for_expectation(primary_hsm, expected_state);
+        let actual_state = primary_hsm.state();
         if &actual_state != expected_state {
             return Err(ConfError::Fail(format!(
                 "state mismatch: expected {expected_state}, got {actual_state}"
@@ -5776,7 +5776,7 @@ fn assert_expectations(
                     "expect.states.{id} must be a string"
                 )));
             };
-            let actual_state = actual_state_for_expectation(hsm_by_id(hsms, id)?, expected_state);
+            let actual_state = hsm_by_id(hsms, id)?.state();
             if &actual_state != expected_state {
                 return Err(ConfError::Fail(format!(
                     "states.{id} mismatch: expected {expected_state}, got {actual_state}"
@@ -5823,15 +5823,6 @@ fn assert_expectations(
     }
 
     Ok(())
-}
-
-fn actual_state_for_expectation(hsm: &HSM<ConformanceInstance>, expected_state: &str) -> String {
-    let actual_state = hsm.state();
-    if expected_state.is_empty() && actual_state == hsm.qualified_name() {
-        String::new()
-    } else {
-        actual_state
-    }
 }
 
 fn aggregate_snapshots(hsms: &BTreeMap<String, HSM<ConformanceInstance>>) -> Json {

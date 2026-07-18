@@ -160,7 +160,7 @@ async fn attribute_set_ignores_inactive_machine() -> Result<()> {
         HsmError::Runtime(message) if message == "set requires a started HSM"
     ));
     assert_eq!(hsm.Get("count"), Some(AttributeValue::Int(0)));
-    assert_eq!(hsm.state(), "/InactiveAttributeSetMachine");
+    assert_eq!(hsm.state(), "");
 
     hsm.start().await?;
     Stop(&ctx, &hsm).await?;
@@ -171,7 +171,7 @@ async fn attribute_set_ignores_inactive_machine() -> Result<()> {
         HsmError::Runtime(message) if message == "set requires a started HSM"
     ));
     assert_eq!(hsm.Get("count"), Some(AttributeValue::Int(0)));
-    assert_eq!(hsm.state(), "/InactiveAttributeSetMachine");
+    assert_eq!(hsm.state(), "");
 
     Ok(())
 }

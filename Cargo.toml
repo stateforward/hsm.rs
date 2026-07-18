@@ -1,6 +1,6 @@
 [package]
 name = "stateforward-hsm"
-version = "1.3.1"
+version = "1.3.2"
 edition = "2024"
 description = "A hierarchical state machine runtime for Rust"
 repository = "https://github.com/stateforward/hsm.rs"

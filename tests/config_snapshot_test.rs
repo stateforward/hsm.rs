@@ -155,7 +155,7 @@ async fn package_constructors_bind_models_without_starting() -> Result<()> {
     );
 
     let hsm = New(ConfigInstance::default(), model);
-    assert_eq!(hsm.state(), "/RustNewMachine");
+    assert_eq!(hsm.state(), "");
 
     let error = take_snapshot(&ctx, &hsm).unwrap_err();
     assert!(matches!(
@@ -177,7 +177,7 @@ async fn package_constructors_bind_models_without_starting() -> Result<()> {
     let hsm = new_with_config(ConfigInstance::default(), model, config);
     assert_eq!(hsm.ID(), "new-with-config-id");
     assert_eq!(hsm.Name(), "/RuntimeNewWithConfig");
-    assert_eq!(hsm.state(), "/RustNewConfiguredMachine");
+    assert_eq!(hsm.state(), "");
 
     Ok(())
 }

@@ -229,7 +229,7 @@ async fn dispatch_all_reaches_all_started_instances() -> Result<()> {
     DispatchAll(bravo.context(), Event::new("go")).await?;
     assert_eq!(alpha.state(), "/FanoutMachine/done");
     assert_eq!(bravo.state(), "/FanoutMachine/done");
-    assert_eq!(unstarted.state(), "/FanoutMachine");
+    assert_eq!(unstarted.state(), "");
 
     Ok(())
 }
@@ -267,7 +267,7 @@ async fn stop_exits_machine_and_removes_it_from_fanout() -> Result<()> {
     .await?;
 
     Stop(bravo.context(), &bravo).await?;
-    assert_eq!(bravo.state(), "/FanoutMachine");
+    assert_eq!(bravo.state(), "");
     let (instances, ok) = InstancesFromContext(alpha.context());
     assert!(ok);
     let ids: Vec<String> = instances.iter().map(|machine| machine.id()).collect();
@@ -275,7 +275,7 @@ async fn stop_exits_machine_and_removes_it_from_fanout() -> Result<()> {
 
     DispatchAll(alpha.context(), Event::new("go")).await?;
     assert_eq!(alpha.state(), "/FanoutMachine/done");
-    assert_eq!(bravo.state(), "/FanoutMachine");
+    assert_eq!(bravo.state(), "");
 
     Ok(())
 }
@@ -378,7 +378,7 @@ async fn restart_requires_started_machine() -> Result<()> {
     .await?;
 
     Stop(machine.context(), &machine).await?;
-    assert_eq!(machine.state(), "/FanoutMachine");
+    assert_eq!(machine.state(), "");
 
     let error = Restart(machine.context(), &machine).await.unwrap_err();
     assert!(matches!(

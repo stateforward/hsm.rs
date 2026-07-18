@@ -65,7 +65,7 @@ async fn direct_dispatch_requires_started_machine() -> Result<()> {
         error,
         HsmError::Runtime(message) if message == "dispatch requires a started HSM"
     ));
-    assert_eq!(hsm.state(), "/InactiveDispatchMachine");
+    assert_eq!(hsm.state(), "");
 
     hsm.start().await?;
     Stop(&ctx, &hsm).await?;
@@ -75,7 +75,7 @@ async fn direct_dispatch_requires_started_machine() -> Result<()> {
         error,
         HsmError::Runtime(message) if message == "dispatch requires a started HSM"
     ));
-    assert_eq!(hsm.state(), "/InactiveDispatchMachine");
+    assert_eq!(hsm.state(), "");
 
     Ok(())
 }
