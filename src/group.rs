@@ -218,7 +218,7 @@ impl<T: Instance> Group<T> {
         let machines = self.machines.clone();
         Box::pin(async move {
             if machines.iter().any(HSM::is_started) {
-                return Err(HsmError::Validation("already started HSM".to_string()));
+                return Err(HsmError::Runtime("already started HSM".to_string()));
             }
             for machine in machines {
                 machine.start().await?;
@@ -239,7 +239,7 @@ impl<T: Instance> Group<T> {
         let machines = self.machines.clone();
         Box::pin(async move {
             if machines.iter().any(HSM::is_started) {
-                return Err(HsmError::Validation("already started HSM".to_string()));
+                return Err(HsmError::Runtime("already started HSM".to_string()));
             }
             for machine in machines {
                 machine.start_with_data(data.clone()).await?;

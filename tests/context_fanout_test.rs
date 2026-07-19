@@ -315,7 +315,7 @@ async fn start_rejects_already_started_machine() -> Result<()> {
     let error = machine.start().await.unwrap_err();
     assert!(matches!(
         error,
-        HsmError::Validation(message) if message == "already started HSM"
+        HsmError::Runtime(message) if message == "already started HSM"
     ));
 
     Ok(())
@@ -383,7 +383,7 @@ async fn restart_requires_started_machine() -> Result<()> {
     let error = Restart(machine.context(), &machine).await.unwrap_err();
     assert!(matches!(
         error,
-        HsmError::Validation(message) if message == "restart requires a started HSM"
+        HsmError::Runtime(message) if message == "restart requires a started HSM"
     ));
 
     Ok(())

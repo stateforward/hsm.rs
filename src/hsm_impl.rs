@@ -263,7 +263,7 @@ impl<T: Instance> HSM<T> {
             crate::validate(&hsm.model)?;
 
             if !hsm.is_inactive() {
-                return Err(HsmError::Validation("already started HSM".to_string()));
+                return Err(HsmError::Runtime("already started HSM".to_string()));
             }
 
             *hsm.current_state.write().unwrap() = hsm.model.state.qualified_name().to_string();
@@ -354,7 +354,7 @@ impl<T: Instance> HSM<T> {
             let current_state = hsm.current_state.read().unwrap().clone();
             let root = hsm.model.state.qualified_name().to_string();
             if current_state.is_empty() || current_state == root {
-                return Err(HsmError::Validation(
+                return Err(HsmError::Runtime(
                     "restart requires a started HSM".to_string(),
                 ));
             }
