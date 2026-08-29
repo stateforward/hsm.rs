@@ -75,6 +75,7 @@ const SUPPORTED_FEATURES: &[&str] = &[
     "broadcast",
     "multi_target",
     "group",
+    "dispatch_result",
 ];
 
 #[derive(Debug)]
@@ -2480,6 +2481,7 @@ async fn run_runtime_case(case: CaseData) -> ConfResult<()> {
     let mut last_instance_id = primary_instance_id(&hsms)?;
     let mut stable_label = None;
     let mut last_error: Option<(String, String)> = None;
+    let mut last_dispatch_queued = None;
 
     for step in &case.script {
         let step_object = object(step)?;
@@ -2495,9 +2497,19 @@ async fn run_runtime_case(case: CaseData) -> ConfResult<()> {
             step_instance_id(step)?
         };
         let hsm = hsm_by_id(&hsms, &instance_id)?;
-        match execute_step(&ctx, hsm, &groups, &clock, step, trace_steps).await {
+        match execute_step(
+            &ctx,
+            hsm,
+            &groups,
+            &clock,
+            step,
+            trace_steps,
+            &mut last_dispatch_queued,
+        )
+        .await
+        {
             Ok(Some(label)) => stable_label = Some(label),
-            Ok(None) if step_op != "tick" => stable_label = None,
+            Ok(None) if step_op != "tick" && step_op != "expect" => stable_label = None,
             Ok(None) => {}
             Err(error) => {
                 if record_expected_runtime_error(&case.expect, hsm, error, &mut last_error)? {
@@ -2547,7 +2559,12 @@ async fn run_runtime_case(case: CaseData) -> ConfResult<()> {
         append_stable_trace_for_expectation(hsm_by_id(&hsms, &last_instance_id)?, &case.expect);
     }
 
-    assert_expectations(&case.expect, &hsms, last_error.as_ref())?;
+    assert_expectations(
+        &case.expect,
+        &hsms,
+        last_error.as_ref(),
+        last_dispatch_queued,
+    )?;
     Ok(())
 }
 
@@ -4931,6 +4948,7 @@ async fn execute_step(
     clock: &Arc<LogicalClock>,
     step_ir: &Json,
     trace_steps: StepTraceOptions,
+    last_dispatch_queued: &mut Option<bool>,
 ) -> ConfResult<Option<String>> {
     let step_object = object(step_ir)?;
     let op = required_string(step_object, "op")?;
@@ -5017,6 +5035,7 @@ async fn execute_step(
                 traced
             };
             hsm.dispatch(ctx, event).await?;
+            *last_dispatch_queued = Some(true);
             {
                 let instance = hsm.instance().read().unwrap();
                 let records = vec![hsm_record(hsm)];
@@ -5049,6 +5068,11 @@ async fn execute_step(
                 let instance = hsm.instance().read().unwrap();
                 instance.trace_deferred_dispatch_records(&event_name, &before_records)
             };
+            *last_dispatch_queued = Some(
+                records_for_ids(ctx, &targets.ids)
+                    .iter()
+                    .any(|(_, state)| !state.is_empty()),
+            );
             dispatch_to_targets(ctx, event, &targets.ids).await?;
             {
                 let instance = hsm.instance().read().unwrap();
@@ -5087,6 +5111,11 @@ async fn execute_step(
                 let instance = hsm.instance().read().unwrap();
                 instance.trace_deferred_dispatch_records(&event_name, &before_records)
             };
+            *last_dispatch_queued = Some(
+                context_machine_records(ctx)
+                    .iter()
+                    .any(|(_, state)| !state.is_empty()),
+            );
             dispatch_all_with_route_targets(ctx, event, None).await?;
             {
                 let instance = hsm.instance().read().unwrap();
@@ -5129,6 +5158,8 @@ async fn execute_step(
                 let instance = hsm.instance().read().unwrap();
                 instance.trace_deferred_dispatch_records(&event_name, &before_records)
             };
+            *last_dispatch_queued =
+                Some(group.machines().iter().any(|machine| machine.is_started()));
             group.dispatch(ctx, event).await?;
             {
                 let instance = hsm.instance().read().unwrap();
@@ -5170,7 +5201,7 @@ async fn execute_step(
             };
             let mut hsms = BTreeMap::new();
             hsms.insert("default".to_string(), hsm.clone());
-            assert_expectations(expect, &hsms, None)?;
+            assert_expectations(expect, &hsms, None, *last_dispatch_queued)?;
             Ok(None)
         }
         "set" => {
@@ -5727,6 +5758,7 @@ fn assert_expectations(
     expect: &BTreeMap<String, Json>,
     hsms: &BTreeMap<String, HSM<ConformanceInstance>>,
     last_error: Option<&(String, String)>,
+    last_dispatch_queued: Option<bool>,
 ) -> ConfResult<()> {
     let primary_hsm = hsm_by_id(hsms, &primary_instance_id(hsms)?)?;
 
@@ -5764,6 +5796,20 @@ fn assert_expectations(
         if &actual_state != expected_state {
             return Err(ConfError::Fail(format!(
                 "state mismatch: expected {expected_state}, got {actual_state}"
+            )));
+        }
+    }
+
+    if let Some(expected_queued) = expect.get("queued") {
+        let Json::Bool(expected_queued) = expected_queued else {
+            return Err(ConfError::Fail(
+                "expect.queued must be a boolean".to_string(),
+            ));
+        };
+        if last_dispatch_queued != Some(*expected_queued) {
+            return Err(ConfError::Fail(format!(
+                "dispatch queued mismatch: expected {expected_queued}, got {:?}",
+                last_dispatch_queued
             )));
         }
     }
