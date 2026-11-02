@@ -32,6 +32,7 @@ pub struct CallData {
 pub struct ObservationData {
     pub Event: Event,
     pub Occurrence: String,
+    pub Source: String,
     pub Time: SystemTime,
 }
 
@@ -161,7 +162,7 @@ impl Event {
     }
 
     pub fn observation(
-        _source: impl Into<String>,
+        source: impl Into<String>,
         occurrence: impl Into<String>,
         observed: Event,
     ) -> Self {
@@ -172,6 +173,7 @@ impl Event {
             data: Some(Arc::new(ObservationData {
                 Event: observed,
                 Occurrence: occurrence.into(),
+                Source: source.into(),
                 Time: SystemTime::now(),
             })),
         }

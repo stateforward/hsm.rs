@@ -290,7 +290,17 @@ fn apply_observations<T: Instance + 'static>(model: &mut Model<T>) {
         .collect();
     observations.sort_by(|left, right| left.qualified_name().cmp(right.qualified_name()));
 
+    // Targets are an unordered membership test, so identity sorts them: the
+    // same observer re-added with an equal target set instruments once.
+    let mut applied: Vec<(usize, Vec<String>)> = Vec::new();
     for observation in observations {
+        let mut targets = observation.targets.clone();
+        targets.sort();
+        let identity = (observation.observer as usize, targets);
+        if applied.contains(&identity) {
+            continue;
+        }
+        applied.push(identity);
         let mut member_names: Vec<String> = model.members.keys().cloned().collect();
         member_names.sort();
 
@@ -381,7 +391,7 @@ fn insert_transition_observation<T: Instance + 'static>(
     let insert_at = transition
         .effect
         .iter()
-        .take_while(|behavior_name| is_generated_observation_behavior(model, behavior_name))
+        .take_while(|behavior_name| is_event_observation_behavior(model, behavior_name))
         .count();
     let generated_name = unique_observation_behavior_name(
         model,
@@ -531,14 +541,16 @@ fn observation_behavior<T: Instance + 'static>(
     }
 }
 
-fn is_generated_observation_behavior<T: Instance + 'static>(
+// Event observations of every observer run before any behavior observation
+// wrapping the transition's own effects.
+fn is_event_observation_behavior<T: Instance + 'static>(
     model: &Model<T>,
     behavior_name: &str,
 ) -> bool {
-    model
-        .get_behavior(behavior_name)
-        .map(is_observation_behavior)
-        .unwrap_or(false)
+    matches!(
+        model.get_behavior(behavior_name).map(|behavior| &behavior.operation),
+        Some(Some(BehaviorOperation::Observation { occurrence, .. })) if occurrence == "event"
+    )
 }
 
 fn is_observation_behavior<T: Instance + 'static>(behavior: &Behavior<T>) -> bool {

@@ -35,6 +35,7 @@ const SUPPORTED_FEATURES: &[&str] = &[
     "root_transition",
     "submachine",
     "redefine",
+    "observation",
     "history",
     "shallow_history",
     "deep_history",
@@ -375,6 +376,7 @@ async fn flush_async_work() {
 static TIMER_SPECS: OnceLock<Mutex<HashMap<String, TimerSpec>>> = OnceLock::new();
 static CURRENT_CLOCK: OnceLock<Mutex<Option<Arc<LogicalClock>>>> = OnceLock::new();
 static ACTIVITY_TRACE_TYPES: OnceLock<Mutex<BTreeSet<String>>> = OnceLock::new();
+static OBSERVER_BEHAVIORS: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
 
 fn timer_specs() -> &'static Mutex<HashMap<String, TimerSpec>> {
     TIMER_SPECS.get_or_init(|| Mutex::new(HashMap::new()))
@@ -395,7 +397,7 @@ fn set_current_clock(clock: Arc<LogicalClock>) {
 fn set_activity_trace_options(expect: &BTreeMap<String, Json>) {
     let mut types = activity_trace_types().lock().unwrap();
     types.clear();
-    for trace_type in ["activity_done", "activity_cancel"] {
+    for trace_type in ["activity_done", "activity_cancel", "observation"] {
         if expected_trace_contains(expect, trace_type) {
             types.insert(trace_type.to_string());
         }
@@ -410,6 +412,76 @@ fn reset_case_state() {
     timer_specs().lock().unwrap().clear();
     *current_clock().lock().unwrap() = None;
     activity_trace_types().lock().unwrap().clear();
+    observer_behaviors().lock().unwrap().clear();
+}
+
+fn observer_behaviors() -> &'static Mutex<Vec<String>> {
+    OBSERVER_BEHAVIORS.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+// Observers are plain fn pointers with no operation name in scope, so each
+// observation behavior is bound to its own monomorphized slot.
+const OBSERVER_SLOTS: [OperationFn<ConformanceInstance>; 8] = [
+    conformance_observer::<0>,
+    conformance_observer::<1>,
+    conformance_observer::<2>,
+    conformance_observer::<3>,
+    conformance_observer::<4>,
+    conformance_observer::<5>,
+    conformance_observer::<6>,
+    conformance_observer::<7>,
+];
+
+fn observer_slot(behavior_id: &str) -> ConfResult<OperationFn<ConformanceInstance>> {
+    let mut behaviors = observer_behaviors().lock().unwrap();
+    let slot = match behaviors.iter().position(|id| id == behavior_id) {
+        Some(slot) => slot,
+        None => {
+            behaviors.push(behavior_id.to_string());
+            behaviors.len() - 1
+        }
+    };
+    OBSERVER_SLOTS.get(slot).copied().ok_or_else(|| {
+        ConfError::Skip(format!(
+            "more than {} observation behaviors",
+            OBSERVER_SLOTS.len()
+        ))
+    })
+}
+
+fn conformance_observer<const SLOT: usize>(
+    ctx: &Context,
+    inst: &mut ConformanceInstance,
+    event: &Event,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    let behavior_id = observer_behaviors()
+        .lock()
+        .unwrap()
+        .get(SLOT)
+        .cloned()
+        .unwrap_or_default();
+    let instance = inst.clone();
+    if activity_trace_enabled("observation") {
+        if let Some(data) = event.get_data::<ObservationData>() {
+            let mut source = data.Source.clone();
+            if data.Occurrence == "behavior" {
+                // Member naming for behaviors is runner-specific; attribute the
+                // firing to the owning transition or state instead.
+                source = source
+                    .rsplit_once('/')
+                    .map(|(owner, _)| owner.to_string())
+                    .unwrap_or_default();
+            }
+            instance.push_trace(Json::object(vec![
+                ("type", Json::String("observation".to_string())),
+                ("observer", Json::String(behavior_id.clone())),
+                ("event", Json::String(data.Event.name.clone())),
+                ("source", Json::String(source)),
+                ("occurrence", Json::String(data.Occurrence.clone())),
+            ]));
+        }
+    }
+    instance.run_behavior_async(ctx.clone(), event.clone(), behavior_id)
 }
 
 fn current_clock_now() -> u64 {
@@ -4427,6 +4499,10 @@ fn build_model_ir_with_attributes(
         )?);
     }
 
+    for observation in optional_array(model_object, "observations")? {
+        partials.push(build_observation(&model_root, observation)?);
+    }
+
     let model = if let Some(base_model) = base_model {
         RedefineAs(&base_model, &model_name, partials)
     } else {
@@ -4666,6 +4742,37 @@ fn build_entry_point(
         partials.push(effect_operation(&behavior_ref(ref_ir)?));
     }
     Ok(EntryPoint(&name, partials))
+}
+
+fn build_observation(
+    model_root: &str,
+    observation_ir: &Json,
+) -> ConfResult<Box<dyn PartialElement<ConformanceInstance>>> {
+    let observation = object(observation_ir)?;
+    let observer = observer_slot(&behavior_ref(observation_ir)?)?;
+    let mut targets = Vec::new();
+    for target in optional_array(observation, "targets")? {
+        targets.push(match target {
+            Json::String(path) if path.contains('/') => {
+                resolve_transition_path(model_root, model_root, path)
+            }
+            Json::String(name) => name.clone(),
+            Json::Object(target_object) if target_object.contains_key("event") => {
+                event_name(&target_object["event"])?
+            }
+            Json::Object(target_object) => resolve_transition_path(
+                model_root,
+                model_root,
+                &required_string(target_object, "path")?,
+            ),
+            _ => {
+                return Err(ConfError::Fail(
+                    "observation target must be a string or object".to_string(),
+                ))
+            }
+        });
+    }
+    Ok(Observe(observer, targets))
 }
 
 fn build_exit_point(point_ir: &Json) -> ConfResult<Box<dyn PartialElement<ConformanceInstance>>> {
@@ -5834,8 +5941,9 @@ fn assert_expectations(
     if let Some(expected_trace) = expect.get("trace") {
         let actual_trace = {
             let instance = primary_hsm.instance().read().unwrap();
-            Json::Array(instance.trace())
+            normalize_observation_sources(Json::Array(instance.trace()))
         };
+        let expected_trace = &normalize_observation_sources(expected_trace.clone());
         if &actual_trace != expected_trace {
             return Err(ConfError::Fail(format!(
                 "trace mismatch: expected {}, got {}",
@@ -5907,15 +6015,34 @@ fn normalize_snapshot_expectation_value(value: &mut Json) {
     }
 }
 
-fn normalize_snapshot_transition_name(transition: &mut Json) {
-    let Json::Object(object) = transition else {
-        return;
-    };
-    let Some(Json::String(name)) = object.get_mut("name") else {
+// Generated transition names are runner-specific, as in snapshots.
+fn normalize_observation_sources(mut trace: Json) -> Json {
+    if let Json::Array(entries) = &mut trace {
+        for entry in entries {
+            let Json::Object(object) = entry else {
+                continue;
+            };
+            if object.get("type") != Some(&Json::String("observation".to_string())) {
+                continue;
+            }
+            normalize_snapshot_transition_name_field(object, "source");
+        }
+    }
+    trace
+}
+
+fn normalize_snapshot_transition_name_field(object: &mut BTreeMap<String, Json>, field: &str) {
+    let Some(Json::String(name)) = object.get_mut(field) else {
         return;
     };
     if let Some(index) = name.rfind("/transition_") {
         name.truncate(index + "/transition".len());
+    }
+}
+
+fn normalize_snapshot_transition_name(transition: &mut Json) {
+    if let Json::Object(object) = transition {
+        normalize_snapshot_transition_name_field(object, "name");
     }
 }
 

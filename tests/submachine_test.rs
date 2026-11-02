@@ -206,6 +206,56 @@ async fn exit_point_handler_leaves_submachine_boundary() -> Result<()> {
 }
 
 #[tokio::test]
+async fn exit_point_handler_ignores_child_state_exit_point_declared_first() -> Result<()> {
+    let ctx = Context::new();
+    let inner: stateforward_hsm::Model<SubmachineInstance> = define(
+        "ExitCaptureInner",
+        vec![
+            exit_point("ok", vec![]),
+            initial_with_target(target("idle")),
+            state_with_behaviors(
+                "idle",
+                vec![transition(vec![on("finish"), target("../ok")])],
+            ),
+        ],
+    );
+    let child: stateforward_hsm::Model<SubmachineInstance> = define(
+        "ExitCaptureChild",
+        vec![
+            initial_with_target(target("community")),
+            submachine_state(
+                "community",
+                inner,
+                vec![transition(vec![exit_point("ok", vec![]), target("../ok")])],
+            ),
+            exit_point("ok", vec![]),
+        ],
+    );
+    let model: stateforward_hsm::Model<SubmachineInstance> = define(
+        "ExitCaptureParent",
+        vec![
+            initial_with_target(target("drive")),
+            submachine_state(
+                "drive",
+                child,
+                vec![transition(vec![
+                    exit_point("ok", vec![]),
+                    target("../complete"),
+                ])],
+            ),
+            state("complete"),
+        ],
+    );
+
+    let machine = start(&ctx, SubmachineInstance, model)?;
+    machine.start().await?;
+    machine.dispatch(&ctx, Event::new("finish")).await?;
+    assert_eq!(machine.state(), "/ExitCaptureParent/complete");
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn submachine_connection_point_macros_match_builder_semantics() -> Result<()> {
     let ctx = Context::new();
     let child = stateforward_hsm::define!(

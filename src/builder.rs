@@ -1189,7 +1189,7 @@ fn resolve_exit_point_source<T: Instance>(
         }
 
         let owner = dirname(vertex.qualified_name());
-        if owner == boundary || dirname(owner) == boundary {
+        if owner == boundary {
             direct.push(vertex.qualified_name().to_string());
         } else {
             nested.push(vertex.qualified_name().to_string());
